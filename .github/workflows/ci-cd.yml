@@ -1,4 +1,4 @@
-name: Backend CI/CD
+name: Backend CI
 
 on:
   pull_request:
@@ -21,15 +21,3 @@ jobs:
       - run: npx prisma generate
       - run: npm run build
       - run: docker build -t project-lar-api:${{ github.sha }} .
-
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - name: Disparar deploy no Render
-        env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-        run: |
-          test -n "$RENDER_DEPLOY_HOOK_URL"
-          curl --fail --request POST "$RENDER_DEPLOY_HOOK_URL"

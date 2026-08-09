@@ -2,20 +2,25 @@
 
 ## Render
 
-Crie um Blueprint apontando para este repositório. O arquivo `render.yaml` cria o serviço Docker `project-lar-api`.
+Crie um Blueprint apontando para este repositório. O arquivo `render.yaml` cria
+o serviço Docker `project-lar-api`.
 
 Configure no Render:
 
-- `DATABASE_URL`: conexão PostgreSQL do Neon.
-- `FRONTEND_URL`: URL final da Vercel, sem barra no final.
+- `DATABASE_URL`: conexão PostgreSQL do Neon, incluindo `sslmode=require`.
+- `FRONTEND_URL`: já definida como `https://project-lar-web.vercel.app`.
 - `JWT_SECRET`: gerado automaticamente pelo Blueprint.
 
 O health check está disponível em `/api/health`.
 
 ## GitHub Actions
 
-Adicione no repositório o secret:
+Nenhum secret do Render é necessário no GitHub. O workflow valida o build e a
+imagem Docker. O Render acompanha a branch `main` e publica automaticamente cada
+push.
 
-- `RENDER_DEPLOY_HOOK_URL`: Deploy Hook criado no painel do serviço Render.
+## Endereços de produção
 
-Pull requests executam build e validação da imagem. Pushes na `main` validam e disparam o deploy.
+- Frontend: `https://project-lar-web.vercel.app`
+- API: `https://project-lar-api.onrender.com/api`
+- Health check: `https://project-lar-api.onrender.com/api/health`
