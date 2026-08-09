@@ -1,0 +1,222 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  phone         String   @unique
+  passwordHash  String
+  role          String   @default("CLIENT") // CLIENT, PROVIDER, ADMIN
+  status        String   @default("ACTIVE") // ACTIVE, SUSPENDED, PENDING
+  emailVerified Boolean  @default(false)
+  phoneVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  clientProfile    ClientProfile?
+  providerProfile  ProviderProfile?
+  auditLogs        AuditLog[]
+  disputesReported Dispute[]        @relation("ReportedBy")
+}
+
+model ClientProfile {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  fullName     String
+  neighborhood String
+  city         String
+  latitude     Float?
+  longitude    Float?
+  fullAddress  String   // Protected - masked until quote accepted
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceRequests ServiceRequest[]
+  appointments    Appointment[]
+  reviewsGiven    Review[]
+}
+
+model ProviderProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  fullName        String
+  bio             String?
+  photoUrl        String?
+  serviceRadiusKm Float    @default(10.0)
+  trustScore      Float    @default(0.0)
+  reviewCount     Int      @default(0)
+  isVerified      Boolean  @default(false)
+  isNewProvider   Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services        ProviderService[]
+  coverageAreas   CoverageArea[]
+  availabilities  Availability[]
+  quotes          Quote[]
+  appointments    Appointment[]
+  reviewsReceived Review[]
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String
+  icon        String?
+  createdAt   DateTime @default(now())
+
+  services        ProviderService[]
+  serviceRequests ServiceRequest[]
+}
+
+model ProviderService {
+  id          String   @id @default(uuid())
+  providerId  String
+  categoryId  String
+  basePrice   Float
+  description String?
+  createdAt   DateTime @default(now())
+
+  provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  category Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, categoryId])
+}
+
+model CoverageArea {
+  id           String @id @default(uuid())
+  providerId   String
+  city         String
+  neighborhood String
+  latitude     Float?
+  longitude    Float?
+
+  provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, city, neighborhood])
+}
+
+model Availability {
+  id         String @id @default(uuid())
+  providerId String
+  dayOfWeek  Int    // 0 = Sunday, 1 = Monday, ...
+  startTime  String // "08:00"
+  endTime    String // "17:00"
+
+  provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+}
+
+model ServiceRequest {
+  id               String   @id @default(uuid())
+  clientId         String
+  categoryId       String
+  city             String
+  neighborhood     String
+  latitude         Float?
+  longitude        Float?
+  approxDistanceKm Float    @default(2.5)
+  scheduledDate    DateTime
+  timeSlot         String
+  budgetLimit      Float?
+  description      String
+  status           String   @default("OPEN") // OPEN, QUOTED, ACCEPTED, COMPLETED, CANCELLED
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  client       ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  category     Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  quotes       Quote[]
+  appointments Appointment[]
+}
+
+model Quote {
+  id                String   @id @default(uuid())
+  requestId         String
+  providerId        String
+  price             Float
+  estimatedDuration String
+  message           String
+  status            String   @default("PENDING") // PENDING, ACCEPTED, REJECTED, CANCELLED
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  request     ServiceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  provider    ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  appointment Appointment?
+
+  @@unique([requestId, providerId])
+}
+
+model Appointment {
+  id          String   @id @default(uuid())
+  requestId   String   @unique
+  quoteId     String   @unique
+  clientId    String
+  providerId  String
+  scheduledAt DateTime
+  status      String   @default("SCHEDULED") // SCHEDULED, IN_PROGRESS, AWAITING_CONFIRMATION, COMPLETED, CANCELLED, DISPUTED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  request  ServiceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  quote    Quote           @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  client   ClientProfile   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  review   Review?
+  dispute  Dispute?
+}
+
+model Review {
+  id                  String   @id @default(uuid())
+  appointmentId       String   @unique
+  clientId            String
+  providerId          String
+  qualityRating       Int
+  punctualityRating   Int
+  communicationRating Int
+  careRating          Int
+  costBenefitRating   Int
+  averageScore        Float
+  comment             String?
+  isVerified          Boolean  @default(true)
+  status              String   @default("PUBLISHED") // PUBLISHED, UNDER_REVIEW, HIDDEN
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  appointment Appointment     @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  client      ClientProfile   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  provider    ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+}
+
+model Dispute {
+  id               String   @id @default(uuid())
+  appointmentId    String   @unique
+  reportedByUserId String
+  reason           String
+  status           String   @default("OPEN") // OPEN, RESOLVED, DISMISSED
+  adminNotes       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  reportedBy  User        @relation("ReportedBy", fields: [reportedByUserId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  resource  String
+  details   String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
