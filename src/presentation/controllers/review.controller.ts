@@ -27,6 +27,12 @@ export class ReviewController {
         return res.status(400).json({ error: 'Preencha as 5 notas do formulário de avaliação.' });
       }
 
+      const ratings = [qualityRating, punctualityRating, communicationRating, careRating, costBenefitRating]
+        .map((rating) => Number(rating));
+      if (ratings.some((rating) => !Number.isInteger(rating) || rating < 1 || rating > 5)) {
+        return res.status(400).json({ error: 'As notas devem ser números inteiros entre 1 e 5.' });
+      }
+
       const client = await prisma.clientProfile.findUnique({ where: { userId } });
       if (!client) {
         return res.status(400).json({ error: 'Perfil de cliente não encontrado.' });
@@ -57,11 +63,11 @@ export class ReviewController {
 
       // Calculate 5-criteria average
       const averageScore = ReputationEngine.calculateReviewAverage({
-        qualityRating: parseInt(qualityRating),
-        punctualityRating: parseInt(punctualityRating),
-        communicationRating: parseInt(communicationRating),
-        careRating: parseInt(careRating),
-        costBenefitRating: parseInt(costBenefitRating),
+        qualityRating: ratings[0],
+        punctualityRating: ratings[1],
+        communicationRating: ratings[2],
+        careRating: ratings[3],
+        costBenefitRating: ratings[4],
       });
 
       // Create verified review
@@ -70,11 +76,11 @@ export class ReviewController {
           appointmentId,
           clientId: client.id,
           providerId: appointment.providerId,
-          qualityRating: parseInt(qualityRating),
-          punctualityRating: parseInt(punctualityRating),
-          communicationRating: parseInt(communicationRating),
-          careRating: parseInt(careRating),
-          costBenefitRating: parseInt(costBenefitRating),
+          qualityRating: ratings[0],
+          punctualityRating: ratings[1],
+          communicationRating: ratings[2],
+          careRating: ratings[3],
+          costBenefitRating: ratings[4],
           averageScore,
           comment,
           isVerified: true,
@@ -105,6 +111,9 @@ export class ReviewController {
         updatedProviderTrustScore: newTrustScore,
       });
     } catch (error: any) {
+      if (error.code === 'P2002') {
+        return res.status(409).json({ error: 'Este agendamento já possui uma avaliação registrada.' });
+      }
       return res.status(500).json({ error: 'Erro ao criar avaliação.', details: error.message });
     }
   }

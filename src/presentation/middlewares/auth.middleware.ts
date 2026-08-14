@@ -6,19 +6,18 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.split(' ')[1];
 
   if (!token) {
     return res.status(401).json({ error: 'Token de acesso não fornecido.' });
   }
 
   try {
-    const decoded = JwtProvider.verifyToken(token);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(403).json({ error: 'Token inválido ou expirado.' });
+    req.user = JwtProvider.verifyToken(token);
+    return next();
+  } catch {
+    return res.status(401).json({ error: 'Token inválido ou expirado.' });
   }
 }
 
@@ -27,6 +26,6 @@ export function authorizeRoles(...roles: string[]) {
     if (!req.user || !roles.includes(req.user.role)) {
       return res.status(403).json({ error: 'Acesso negado. Permissão insuficiente.' });
     }
-    next();
+    return next();
   };
 }

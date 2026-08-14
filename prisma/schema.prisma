@@ -89,6 +89,7 @@ model ProviderService {
   category Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([providerId, categoryId])
+  @@index([categoryId])
 }
 
 model CoverageArea {
@@ -102,6 +103,7 @@ model CoverageArea {
   provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@unique([providerId, city, neighborhood])
+  @@index([city, neighborhood])
 }
 
 model Availability {
@@ -116,6 +118,7 @@ model Availability {
 
 model ServiceRequest {
   id               String   @id @default(uuid())
+  deduplicationKey String?  @unique
   clientId         String
   categoryId       String
   city             String
@@ -135,6 +138,9 @@ model ServiceRequest {
   category     Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   quotes       Quote[]
   appointments Appointment[]
+
+  @@index([clientId, createdAt])
+  @@index([categoryId, status, createdAt])
 }
 
 model Quote {
@@ -153,6 +159,7 @@ model Quote {
   appointment Appointment?
 
   @@unique([requestId, providerId])
+  @@index([requestId, status])
 }
 
 model Appointment {
@@ -172,6 +179,9 @@ model Appointment {
   provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
   review   Review?
   dispute  Dispute?
+
+  @@index([clientId, createdAt])
+  @@index([providerId, createdAt])
 }
 
 model Review {

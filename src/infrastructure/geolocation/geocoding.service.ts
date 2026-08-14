@@ -2,67 +2,68 @@ interface MapboxGeocodingResponse {
   features?: Array<{ center: [number, number] }>;
 }
 
+type Coordinates = { latitude: number; longitude: number };
+
 export class GeocodingService {
   private static readonly MAPBOX_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places';
+  private static readonly REQUEST_TIMEOUT_MS = 2500;
+  private static readonly cache = new Map<string, Coordinates | null>();
 
-  /**
-   * Obtém latitude e longitude baseada no bairro e cidade via MapBox.
-   */
-  public static async getCoordinates(neighborhood: string, city: string): Promise<{ latitude: number; longitude: number } | null> {
+  public static async getCoordinates(neighborhood: string, city: string): Promise<Coordinates | null> {
+    const cacheKey = `${neighborhood.trim().toLowerCase()}|${city.trim().toLowerCase()}`;
+    if (this.cache.has(cacheKey)) {
+      return this.cache.get(cacheKey) ?? null;
+    }
+
+    const token = process.env.MAPBOX_ACCESS_TOKEN;
+    if (!token) {
+      this.cache.set(cacheKey, null);
+      return null;
+    }
+
     try {
       const query = encodeURIComponent(`${neighborhood}, ${city}, Brazil`);
-      const token = process.env.MAPBOX_ACCESS_TOKEN;
-      
-      if (!token) {
-        console.error('[Geocoding] MAPBOX_ACCESS_TOKEN não configurado no .env');
-        return null;
-      }
-
       const response = await fetch(`${this.MAPBOX_URL}/${query}.json?access_token=${token}&limit=1`, {
-        headers: {
-          'Accept': 'application/json'
-        }
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(this.REQUEST_TIMEOUT_MS),
       });
 
       if (!response.ok) {
-        console.error(`[Geocoding] HTTP Error ${response.status}`);
+        console.error(`[Geocoding] HTTP ${response.status}`);
+        this.cache.set(cacheKey, null);
         return null;
       }
 
       const data = await response.json() as MapboxGeocodingResponse;
-
-      if (data && data.features && data.features.length > 0) {
-        // Mapbox retorna longitude primeiro (center: [lon, lat])
-        const [longitude, latitude] = data.features[0].center;
-        return { latitude, longitude };
+      const center = data.features?.[0]?.center;
+      if (!center) {
+        this.cache.set(cacheKey, null);
+        return null;
       }
 
-      console.warn(`[Geocoding] Nenhuma coordenada encontrada para: ${neighborhood}, ${city}`);
-      return null;
+      const [longitude, latitude] = center;
+      const coordinates = { latitude, longitude };
+      this.cache.set(cacheKey, coordinates);
+      return coordinates;
     } catch (error) {
-      console.error(`[Geocoding] Falha ao buscar coordenadas:`, error);
+      console.error('[Geocoding] Falha ou timeout ao buscar coordenadas:', error);
+      this.cache.set(cacheKey, null);
       return null;
     }
   }
 
-  /**
-   * Calcula a distância entre duas coordenadas usando a fórmula de Haversine (em KM)
-   */
   public static calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371; // Raio da Terra em KM
-    const dLat = this.deg2rad(lat2 - lat1);
-    const dLon = this.deg2rad(lon2 - lon1);
-    
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    const earthRadiusKm = 6371;
+    const latitudeDelta = this.deg2rad(lat2 - lat1);
+    const longitudeDelta = this.deg2rad(lon2 - lon1);
+    const value =
+      Math.sin(latitudeDelta / 2) ** 2 +
+      Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) * Math.sin(longitudeDelta / 2) ** 2;
+
+    return earthRadiusKm * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
   }
 
-  private static deg2rad(deg: number): number {
-    return deg * (Math.PI / 180);
+  private static deg2rad(degrees: number): number {
+    return degrees * (Math.PI / 180);
   }
 }

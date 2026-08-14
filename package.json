@@ -10,6 +10,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma db push",
     "categories:sync": "ts-node src/infrastructure/database/sync-categories.ts",
+    "audit:flow": "node scripts/audit-flow.js",
     "seed": "ts-node src/infrastructure/database/seed.ts"
   },
   "dependencies": {
