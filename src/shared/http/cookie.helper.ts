@@ -20,7 +20,7 @@ function getCookieOptions(): CookieOptions {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'none',
+    sameSite: isProduction ? 'none' : 'lax',
     path: '/api',
     maxAge: SEVEN_DAYS_MS,
     ...(domain ? { domain } : {}),
@@ -35,7 +35,7 @@ export function clearTokenCookie(res: Response): void {
   res.clearCookie(COOKIE_NAME, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'none',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/api',
   });
 }
