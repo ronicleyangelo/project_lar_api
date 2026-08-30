@@ -8,17 +8,22 @@ generator client {
 }
 
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  phone         String   @unique
-  passwordHash  String?
-  googleId      String?  @unique
-  role          String   @default("CLIENT") // CLIENT, PROVIDER, ADMIN
-  status        String   @default("ACTIVE") // ACTIVE, SUSPENDED, PENDING
-  emailVerified Boolean  @default(false)
-  phoneVerified Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                   String    @id @default(uuid())
+  email                String    @unique
+  phone                String    @unique
+  passwordHash         String?
+  googleId             String?   @unique
+  avatarUrl            String?
+  role                 String    @default("CLIENT") // CLIENT, PROVIDER, ADMIN
+  status               String    @default("ACTIVE") // ACTIVE, SUSPENDED, PENDING
+  emailVerified        Boolean   @default(false)
+  phoneVerified        Boolean   @default(false)
+  profileVisible       Boolean   @default(true)
+  allowRecommendations Boolean   @default(true)
+  deletionRequestedAt  DateTime?
+  scheduledDeletionAt  DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   clientProfile    ClientProfile?
   providerProfile  ProviderProfile?
@@ -34,7 +39,7 @@ model ClientProfile {
   city         String
   latitude     Float?
   longitude    Float?
-  fullAddress  String   // Protected - masked until quote accepted
+  fullAddress  String // Protected - masked until quote accepted
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -45,28 +50,34 @@ model ClientProfile {
 }
 
 model ProviderProfile {
-  id              String   @id @default(uuid())
-  userId          String   @unique
-  fullName        String
-  bio             String?
-  photoUrl        String?
-  serviceRadiusKm Float    @default(10.0)
-  trustScore      Float    @default(0.0)
-  reviewCount     Int      @default(0)
-  isVerified      Boolean  @default(false)
-  isNewProvider   Boolean  @default(true)
-  propertyTypes   String[] @default([]) // HOUSE, APARTMENT, CONDOMINIUM
-  acceptsPets     Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                   String    @id @default(uuid())
+  userId               String    @unique
+  fullName             String
+  bio                  String?
+  photoUrl             String?
+  serviceRadiusKm      Float     @default(10.0)
+  trustScore           Float     @default(0.0)
+  reviewCount          Int       @default(0)
+  isVerified           Boolean   @default(false)
+  verificationStatus   String    @default("DRAFT") // DRAFT, PENDING_REVIEW, CHANGES_REQUESTED, VERIFIED, REJECTED
+  verificationNote     String?
+  submittedForReviewAt DateTime?
+  reviewedAt           DateTime?
+  reviewedByUserId     String?
+  isNewProvider        Boolean   @default(true)
+  propertyTypes        String[]  @default([]) // HOUSE, APARTMENT, CONDOMINIUM
+  acceptsPets          Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   services        ProviderService[]
   coverageAreas   CoverageArea[]
   availabilities  Availability[]
   quotes          Quote[]
   appointments    Appointment[]
   reviewsReceived Review[]
+  activities      ProviderActivity[]
 }
 
 model Category {
@@ -78,6 +89,34 @@ model Category {
 
   services        ProviderService[]
   serviceRequests ServiceRequest[]
+}
+
+model ServiceActivity {
+  id                String   @id @default(uuid())
+  code              String   @unique
+  name              String
+  description       String?
+  includedByDefault Boolean  @default(false)
+  suggestedMinutes  Int      @default(0)
+  defaultExtraPrice Float    @default(0)
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  providers ProviderActivity[]
+  requests  ServiceRequestActivity[]
+}
+
+model ProviderActivity {
+  providerId String
+  activityId String
+  extraPrice Float?
+
+  provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  activity ServiceActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@id([providerId, activityId])
+  @@index([activityId])
 }
 
 model ProviderService {
@@ -112,7 +151,7 @@ model CoverageArea {
 model Availability {
   id         String @id @default(uuid())
   providerId String
-  dayOfWeek  Int    // 0 = Sunday, 1 = Monday, ...
+  dayOfWeek  Int // 0 = Sunday, 1 = Monday, ...
   startTime  String // "08:00"
   endTime    String // "17:00"
 
@@ -137,13 +176,25 @@ model ServiceRequest {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  client       ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  category     Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  client       ClientProfile            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  category     Category                 @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   quotes       Quote[]
   appointments Appointment[]
+  activities   ServiceRequestActivity[]
 
   @@index([clientId, createdAt])
   @@index([categoryId, status, createdAt])
+}
+
+model ServiceRequestActivity {
+  requestId  String
+  activityId String
+
+  request  ServiceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  activity ServiceActivity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+
+  @@id([requestId, activityId])
+  @@index([activityId])
 }
 
 model Quote {
