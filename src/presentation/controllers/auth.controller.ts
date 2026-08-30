@@ -5,6 +5,7 @@ import { JwtProvider } from '../../infrastructure/security/jwt.provider';
 import { GeocodingService } from '../../infrastructure/geolocation/geocoding.service';
 import { GoogleAuthProvider } from '../../infrastructure/security/google-auth.provider';
 import { SERVICE_CATEGORIES } from '../../domain/constants/service-categories';
+import { setTokenCookie, clearTokenCookie } from '../../shared/http/cookie.helper';
 
 const normalizePhone = (value: unknown): string => String(value ?? '').replace(/\D/g, '');
 const isValidMobilePhone = (value: string): boolean => /^[1-9]{2}9\d{8}$/.test(value);
@@ -15,7 +16,9 @@ export class AuthController {
       id: user.id,
       email: user.email,
       phone: user.phone,
+      avatarUrl: user.avatarUrl,
       role: user.role,
+      status: user.status,
       profile: user.role === 'CLIENT' ? user.clientProfile : user.providerProfile,
     };
   }
@@ -58,15 +61,18 @@ export class AuthController {
           });
         }
 
-        if (!user.googleId) {
-          user = await prisma.user.update({
-            where: { id: user.id },
-            data: { googleId: identity.googleId, emailVerified: true },
-            include: { clientProfile: true, providerProfile: true },
-          });
-        }
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            googleId: identity.googleId,
+            emailVerified: true,
+            avatarUrl: identity.picture || (user as any).avatarUrl,
+          } as any,
+          include: { clientProfile: true, providerProfile: true },
+        });
 
         const token = JwtProvider.generateToken({ userId: user.id, email: user.email, role: user.role });
+        setTokenCookie(res, token);
         return res.json({ token, user: AuthController.toAuthResponse(user), requiresOnboarding: false });
       }
 
@@ -125,6 +131,7 @@ export class AuthController {
             phone,
             passwordHash: null,
             googleId: identity.googleId,
+            avatarUrl: identity.picture || null,
             emailVerified: true,
             role,
             status: 'ACTIVE',
@@ -162,13 +169,14 @@ export class AuthController {
             create: SERVICE_CATEGORIES[0],
           });
           await tx.providerService.create({
-            data: { providerId: created.providerProfile!.id, categoryId: cleaningCategory.id, basePrice: 100 },
+            data: { providerId: created.providerProfile!.id, categoryId: cleaningCategory.id, basePrice: 25 },
           });
         }
         return created;
       });
 
       const token = JwtProvider.generateToken({ userId: user.id, email: user.email, role: user.role });
+      setTokenCookie(res, token);
       return res.status(201).json({ token, user: AuthController.toAuthResponse(user), requiresOnboarding: false });
     } catch (error: any) {
       if (error?.name === 'TokenExpiredError' || error?.name === 'JsonWebTokenError') {
@@ -228,6 +236,7 @@ export class AuthController {
         email: user.email,
         role: user.role,
       });
+      setTokenCookie(res, token);
 
       return res.status(201).json({
         message: 'Cadastro de cliente realizado com sucesso!',
@@ -236,6 +245,7 @@ export class AuthController {
           id: user.id,
           email: user.email,
           role: user.role,
+          status: user.status,
           profile: user.clientProfile,
         },
       });
@@ -303,7 +313,7 @@ export class AuthController {
         create: SERVICE_CATEGORIES[0],
       });
       await prisma.providerService.create({
-        data: { providerId: user.providerProfile!.id, categoryId: cleaningCategory.id, basePrice: 100 },
+        data: { providerId: user.providerProfile!.id, categoryId: cleaningCategory.id, basePrice: 25 },
       });
 
       const token = JwtProvider.generateToken({
@@ -311,6 +321,7 @@ export class AuthController {
         email: user.email,
         role: user.role,
       });
+      setTokenCookie(res, token);
 
       return res.status(201).json({
         message: 'Cadastro de profissional realizado com sucesso!',
@@ -319,6 +330,7 @@ export class AuthController {
           id: user.id,
           email: user.email,
           role: user.role,
+          status: user.status,
           profile: user.providerProfile,
         },
       });
@@ -357,6 +369,7 @@ export class AuthController {
         email: user.email,
         role: user.role,
       });
+      setTokenCookie(res, token);
 
       return res.json({
         token,
@@ -364,6 +377,7 @@ export class AuthController {
           id: user.id,
           email: user.email,
           role: user.role,
+          status: user.status,
           profile: user.role === 'CLIENT' ? user.clientProfile : user.providerProfile,
         },
       });
@@ -397,5 +411,10 @@ export class AuthController {
     } catch (error: any) {
       return res.status(500).json({ error: 'Erro ao buscar usuário.', details: error.message });
     }
+  }
+
+  public static async logout(_req: Request, res: Response) {
+    clearTokenCookie(res);
+    return res.json({ message: 'Logout realizado com sucesso.' });
   }
 }
