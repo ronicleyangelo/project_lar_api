@@ -141,8 +141,8 @@ export class RequestController {
   public static async getRecommendations(req: Request, res: Response) {
     try {
       const { categoryId, city, neighborhood, minBudget, maxBudget, propertyType, hasPets, minRating, activityIds } = req.query;
-      if (!categoryId || !city) {
-        return res.status(400).json({ error: 'Informe categoria e cidade para recomendação.' });
+      if (!categoryId) {
+        return res.status(400).json({ error: 'Informe a categoria para recomendação.' });
       }
 
       const allProviders = await prisma.providerProfile.findMany({
@@ -155,7 +155,7 @@ export class RequestController {
       });
       const rankedProviders = await RecommendationEngine.rankProviders(allProviders, {
         categoryId: categoryId as string,
-        city: city as string,
+        city: String(city || ''),
         neighborhood: String(neighborhood || ''),
         minBudget: minBudget ? Number(minBudget) : undefined,
         maxBudget: maxBudget ? Number(maxBudget) : undefined,

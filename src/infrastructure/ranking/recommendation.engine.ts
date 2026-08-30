@@ -45,7 +45,7 @@ export class RecommendationEngine {
   ): Promise<RankedProvider[]> {
     
     // Obter coordenadas do cliente via MapLibre/OSM
-    const clientCoords = criteria.neighborhood.trim()
+    const clientCoords = criteria.city.trim() && criteria.neighborhood.trim()
       ? await GeocodingService.getCoordinates(criteria.neighborhood, criteria.city)
       : null;
     
@@ -66,7 +66,9 @@ export class RecommendationEngine {
         }
       }
       providerDistances.set(p.id, minimumDistance);
-      const handlesLocation = minimumDistance != null
+      const handlesLocation = !normalizedCity
+        ? true
+        : minimumDistance != null
         ? minimumDistance <= p.serviceRadiusKm
         : p.coverageAreas.some((area) =>
             area.city.trim().toLocaleLowerCase('pt-BR') === normalizedCity &&

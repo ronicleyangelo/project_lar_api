@@ -11,6 +11,8 @@ import { ReviewController } from './presentation/controllers/review.controller';
 import { AdminController } from './presentation/controllers/admin.controller';
 import { ProviderProfileController } from './presentation/controllers/provider-profile.controller';
 import { ActivityController } from './presentation/controllers/activity.controller';
+import { ClientProfileController } from './presentation/controllers/client-profile.controller';
+import { FavoriteController } from './presentation/controllers/favorite.controller';
 import { accountRouter } from './modules/account/presentation/account.routes';
 import { errorMiddleware } from './shared/http/error.middleware';
 import { authenticateToken, authorizeRoles } from './presentation/middlewares/auth.middleware';
@@ -53,6 +55,11 @@ app.get('/api/auth/me', authenticateToken, AuthController.getCurrentUser);
 app.get('/api/provider/profile', authenticateToken, authorizeRoles('PROVIDER'), ProviderProfileController.getProfile);
 app.put('/api/provider/profile', authenticateToken, authorizeRoles('PROVIDER'), ProviderProfileController.updateProfile);
 app.post('/api/provider/profile/submit-review', authenticateToken, authorizeRoles('PROVIDER'), ProviderProfileController.submitForReview);
+app.get('/api/client/profile', authenticateToken, authorizeRoles('CLIENT'), ClientProfileController.getProfile);
+app.put('/api/client/profile', authenticateToken, authorizeRoles('CLIENT'), ClientProfileController.updateProfile);
+app.get('/api/client/favorites', authenticateToken, authorizeRoles('CLIENT'), FavoriteController.list);
+app.post('/api/client/favorites/:providerId', authenticateToken, authorizeRoles('CLIENT'), FavoriteController.add);
+app.delete('/api/client/favorites/:providerId', authenticateToken, authorizeRoles('CLIENT'), FavoriteController.remove);
 app.use('/api/account', accountRouter);
 
 // Categories
