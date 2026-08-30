@@ -18,6 +18,9 @@ export class QuoteController {
         include: { services: true, coverageAreas: true },
       });
       if (!provider) return res.status(400).json({ error: 'Perfil de profissional nao encontrado.' });
+      if (provider.verificationStatus !== 'VERIFIED') {
+        return res.status(403).json({ error: 'Seu perfil precisa ser aprovado antes de enviar propostas.' });
+      }
 
       const requestItem = await prisma.serviceRequest.findUnique({ where: { id: requestId } });
       if (!requestItem) return res.status(404).json({ error: 'Solicitacao nao encontrada.' });

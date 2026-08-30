@@ -17,6 +17,7 @@ function buildDeduplicationKey(clientId: string, payload: Record<string, unknown
     payload.scheduledDate,
     normalizeFingerprintText(payload.timeSlot),
     payload.budgetLimit ?? '',
+    ...(Array.isArray(payload.activityIds) ? [...payload.activityIds].sort() : []),
     normalizeFingerprintText(payload.description),
   ].join('|');
 
@@ -29,7 +30,7 @@ export class RequestController {
 
     try {
       const userId = req.user.userId;
-      const { categoryId, city, neighborhood, scheduledDate, timeSlot, budgetLimit, description } = req.body;
+      const { categoryId, city, neighborhood, scheduledDate, timeSlot, budgetLimit, description, activityIds } = req.body;
       const normalizedCity = normalizeText(city);
       const normalizedNeighborhood = normalizeText(neighborhood);
       const normalizedTimeSlot = normalizeText(timeSlot);
@@ -38,6 +39,7 @@ export class RequestController {
       const parsedBudget = budgetLimit === undefined || budgetLimit === null || budgetLimit === ''
         ? null
         : Number(budgetLimit);
+      const selectedActivityIds = Array.isArray(activityIds) ? Array.from(new Set(activityIds.map(String))) : [];
 
       if (!categoryId || !normalizedCity || !normalizedNeighborhood || !scheduledDate || !normalizedTimeSlot || !normalizedDescription) {
         return res.status(400).json({ error: 'Preencha todos os campos da solicitação.' });
@@ -47,6 +49,9 @@ export class RequestController {
       }
       if (parsedBudget !== null && (!Number.isFinite(parsedBudget) || parsedBudget < 0)) {
         return res.status(400).json({ error: 'O orçamento deve ser um valor válido.' });
+      }
+      if (selectedActivityIds.length === 0) {
+        return res.status(400).json({ error: 'Selecione ao menos uma atividade para o serviço.' });
       }
 
       const [clientProfile, category] = await Promise.all([
@@ -69,6 +74,7 @@ export class RequestController {
         timeSlot: normalizedTimeSlot,
         budgetLimit: parsedBudget,
         description: normalizedDescription,
+        activityIds: selectedActivityIds,
       });
 
       const existingRequest = await prisma.serviceRequest.findUnique({
@@ -104,8 +110,9 @@ export class RequestController {
           timeSlot: normalizedTimeSlot,
           budgetLimit: parsedBudget,
           description: normalizedDescription,
+          activities: { create: selectedActivityIds.map(activityId => ({ activityId })) },
         },
-        include: { category: true, client: true },
+        include: { category: true, client: true, activities: { include: { activity: true } } },
       });
 
       return res.status(201).json({
@@ -133,23 +140,29 @@ export class RequestController {
 
   public static async getRecommendations(req: Request, res: Response) {
     try {
-      const { categoryId, city, neighborhood, minBudget, maxBudget } = req.query;
-      if (!categoryId || !city || !neighborhood) {
-        return res.status(400).json({ error: 'Informe categoria, cidade e bairro para recomendação.' });
+      const { categoryId, city, neighborhood, minBudget, maxBudget, propertyType, hasPets, minRating, activityIds } = req.query;
+      if (!categoryId || !city) {
+        return res.status(400).json({ error: 'Informe categoria e cidade para recomendação.' });
       }
 
       const allProviders = await prisma.providerProfile.findMany({
         where: {
           services: { some: { categoryId: categoryId as string } },
+          user: { profileVisible: true, status: 'ACTIVE' },
+          verificationStatus: 'VERIFIED',
         },
-        include: { services: true, coverageAreas: true },
+        include: { services: true, coverageAreas: true, activities: true },
       });
       const rankedProviders = await RecommendationEngine.rankProviders(allProviders, {
         categoryId: categoryId as string,
         city: city as string,
-        neighborhood: neighborhood as string,
+        neighborhood: String(neighborhood || ''),
         minBudget: minBudget ? Number(minBudget) : undefined,
         maxBudget: maxBudget ? Number(maxBudget) : undefined,
+        propertyType: propertyType ? String(propertyType) : undefined,
+        hasPets: hasPets === 'true',
+        minRating: minRating ? Number(minRating) : undefined,
+        activityIds: typeof activityIds === 'string' ? activityIds.split(',').filter(Boolean) : undefined,
       });
       return res.json(rankedProviders);
     } catch (error: any) {
@@ -168,6 +181,7 @@ export class RequestController {
         where: { clientId: clientProfile.id },
         include: {
           category: true,
+          activities: { include: { activity: true } },
           quotes: { include: { provider: true } },
           appointments: { include: { provider: true, review: true } },
         },
@@ -183,10 +197,13 @@ export class RequestController {
     try {
       const provider = await prisma.providerProfile.findUnique({
         where: { userId: req.user.userId },
-        include: { services: true, coverageAreas: true },
+        include: { services: true, coverageAreas: true, activities: true },
       });
       if (!provider) {
         return res.status(400).json({ error: 'Perfil de profissional não encontrado.' });
+      }
+      if (provider.verificationStatus !== 'VERIFIED') {
+        return res.status(403).json({ error: 'Seu perfil precisa ser aprovado antes de receber pedidos.' });
       }
 
       const requests = await prisma.serviceRequest.findMany({
@@ -195,11 +212,13 @@ export class RequestController {
           status: { in: ['OPEN', 'QUOTED'] },
           quotes: { none: { providerId: provider.id } },
         },
-        include: { category: true, client: true },
+        include: { category: true, client: true, activities: { include: { activity: true } } },
         orderBy: { createdAt: 'desc' },
       });
 
       const visibleRequests = requests.filter((requestItem) => {
+        const offeredActivityIds = new Set(provider.activities.map(item => item.activityId));
+        if (!requestItem.activities.every(item => offeredActivityIds.has(item.activityId))) return false;
         if (requestItem.latitude == null || requestItem.longitude == null) return true;
         return provider.coverageAreas.some((area) => {
           if (area.latitude == null || area.longitude == null) return false;

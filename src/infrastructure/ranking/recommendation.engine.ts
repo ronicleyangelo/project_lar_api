@@ -1,9 +1,10 @@
-import { ProviderProfile, ProviderService, CoverageArea } from '@prisma/client';
+import { ProviderProfile, ProviderService, CoverageArea, ProviderActivity } from '@prisma/client';
 import { GeocodingService } from '../geolocation/geocoding.service';
 
 export interface ProviderWithDetails extends ProviderProfile {
   services: ProviderService[];
   coverageAreas: CoverageArea[];
+  activities: ProviderActivity[];
 }
 
 export interface RecommendationCriteria {
@@ -12,6 +13,10 @@ export interface RecommendationCriteria {
   neighborhood: string;
   minBudget?: number;
   maxBudget?: number;
+  propertyType?: string;
+  hasPets?: boolean;
+  minRating?: number;
+  activityIds?: string[];
 }
 
 export interface RankedProvider {
@@ -27,6 +32,7 @@ export interface RankedProvider {
     priceScore: number;
   };
   isNewProvider: boolean;
+  distanceKm: number | null;
 }
 
 export class RecommendationEngine {
@@ -39,21 +45,43 @@ export class RecommendationEngine {
   ): Promise<RankedProvider[]> {
     
     // Obter coordenadas do cliente via MapLibre/OSM
-    const clientCoords = await GeocodingService.getCoordinates(criteria.neighborhood, criteria.city);
+    const clientCoords = criteria.neighborhood.trim()
+      ? await GeocodingService.getCoordinates(criteria.neighborhood, criteria.city)
+      : null;
     
     // Stage 1: Mandatory Filters
+    const normalizedCity = criteria.city.trim().toLocaleLowerCase('pt-BR');
+    const normalizedNeighborhood = criteria.neighborhood.trim().toLocaleLowerCase('pt-BR');
+    const providerDistances = new Map<string, number | null>();
+
     const eligibleProviders = providers.filter((p) => {
       const matchingService = p.services.find((s) => s.categoryId === criteria.categoryId);
       const handlesCategory = Boolean(matchingService);
-      const handlesLocation = p.coverageAreas.some(
-        (a) => a.city.toLowerCase() === criteria.city.toLowerCase() &&
-               a.neighborhood.toLowerCase() === criteria.neighborhood.toLowerCase()
-      );
+      let minimumDistance: number | null = null;
+      if (clientCoords) {
+        for (const area of p.coverageAreas) {
+          if (area.latitude == null || area.longitude == null) continue;
+          const distance = GeocodingService.calculateDistance(clientCoords.latitude, clientCoords.longitude, area.latitude, area.longitude);
+          minimumDistance = minimumDistance == null ? distance : Math.min(minimumDistance, distance);
+        }
+      }
+      providerDistances.set(p.id, minimumDistance);
+      const handlesLocation = minimumDistance != null
+        ? minimumDistance <= p.serviceRadiusKm
+        : p.coverageAreas.some((area) =>
+            area.city.trim().toLocaleLowerCase('pt-BR') === normalizedCity &&
+            (!normalizedNeighborhood || area.neighborhood.trim().toLocaleLowerCase('pt-BR') === normalizedNeighborhood)
+          );
       const isInsideBudget = !matchingService || (
         (criteria.minBudget === undefined || matchingService.basePrice >= criteria.minBudget) &&
         (criteria.maxBudget === undefined || matchingService.basePrice <= criteria.maxBudget)
       );
-      return handlesCategory && handlesLocation && isInsideBudget;
+      const handlesProperty = !criteria.propertyType || p.propertyTypes.includes(criteria.propertyType);
+      const acceptsPets = !criteria.hasPets || p.acceptsPets;
+      const meetsRating = criteria.minRating === undefined || p.trustScore >= criteria.minRating;
+      const offeredActivityIds = new Set(p.activities.map(item => item.activityId));
+      const handlesActivities = !criteria.activityIds?.length || criteria.activityIds.every(id => offeredActivityIds.has(id));
+      return handlesCategory && handlesLocation && isInsideBudget && handlesProperty && acceptsPets && meetsRating && handlesActivities;
     });
 
     // Stage 2: Classification with Weighted Signals
@@ -64,25 +92,8 @@ export class RecommendationEngine {
       const adjustedRatingScore = Math.min(100, (p.trustScore / 5.0) * 100);
 
       // Signal 2: Distance / Proximity (20%) - Real Spatial Calculation
-      let distanceScore = 90; // Default if coords missing
-      if (clientCoords && p.coverageAreas.length > 0) {
-        // Encontrar a menor distância entre o cliente e as áreas de cobertura do profissional
-        let minDistance = Number.MAX_VALUE;
-        for (const area of p.coverageAreas) {
-          if (area.latitude && area.longitude) {
-            const dist = GeocodingService.calculateDistance(
-              clientCoords.latitude, clientCoords.longitude,
-              area.latitude, area.longitude
-            );
-            if (dist < minDistance) minDistance = dist;
-          }
-        }
-        
-        if (minDistance < Number.MAX_VALUE) {
-          // Pontuação: 100 se < 1km, diminui até 0 em 20km
-          distanceScore = Math.max(0, 100 - (minDistance * 5));
-        }
-      }
+      const distanceKm = providerDistances.get(p.id) ?? null;
+      let distanceScore = distanceKm == null ? 75 : Math.max(0, 100 - (distanceKm * 5));
 
       // Signal 3: Completion Rate (15%)
       const completionScore = p.reviewCount > 0 ? 95 : 80;
@@ -128,6 +139,7 @@ export class RecommendationEngine {
           priceScore,
         },
         isNewProvider: p.isNewProvider,
+        distanceKm: distanceKm == null ? null : Math.round(distanceKm * 10) / 10,
       };
     });
 
