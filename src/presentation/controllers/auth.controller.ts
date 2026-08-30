@@ -3,11 +3,181 @@ import { prisma } from '../../infrastructure/database/prisma.service';
 import { PasswordHasher } from '../../infrastructure/security/password.hasher';
 import { JwtProvider } from '../../infrastructure/security/jwt.provider';
 import { GeocodingService } from '../../infrastructure/geolocation/geocoding.service';
+import { GoogleAuthProvider } from '../../infrastructure/security/google-auth.provider';
+import { SERVICE_CATEGORIES } from '../../domain/constants/service-categories';
 
 const normalizePhone = (value: unknown): string => String(value ?? '').replace(/\D/g, '');
 const isValidMobilePhone = (value: string): boolean => /^[1-9]{2}9\d{8}$/.test(value);
 
 export class AuthController {
+  private static toAuthResponse(user: any) {
+    return {
+      id: user.id,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      profile: user.role === 'CLIENT' ? user.clientProfile : user.providerProfile,
+    };
+  }
+
+  public static async googleLogin(req: Request, res: Response) {
+    try {
+      const credential = String(req.body?.credential || '');
+      if (!credential) {
+        return res.status(400).json({ error: 'Credencial do Google não fornecida.' });
+      }
+
+      const identity = await GoogleAuthProvider.verifyIdToken(credential);
+      let user = await prisma.user.findFirst({
+        where: { OR: [{ googleId: identity.googleId }, { email: identity.email }] },
+        include: { clientProfile: true, providerProfile: true },
+      });
+
+      if (user) {
+        if (user.status === 'SUSPENDED') {
+          return res.status(403).json({ error: 'Esta conta está suspensa.' });
+        }
+        if (user.googleId && user.googleId !== identity.googleId) {
+          return res.status(409).json({ error: 'Este e-mail já está vinculado a outra conta Google.' });
+        }
+
+        const hasCompleteProfile =
+          (user.role === 'CLIENT' && !!user.clientProfile) ||
+          (user.role === 'PROVIDER' && !!user.providerProfile) ||
+          user.role === 'ADMIN';
+
+        if (!hasCompleteProfile) {
+          const onboardingToken = JwtProvider.generateGoogleOnboardingToken({
+            ...identity,
+            existingUserId: user.id,
+          });
+          return res.json({
+            requiresOnboarding: true,
+            onboardingToken,
+            googleProfile: { email: identity.email, fullName: identity.fullName, picture: identity.picture },
+          });
+        }
+
+        if (!user.googleId) {
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: { googleId: identity.googleId, emailVerified: true },
+            include: { clientProfile: true, providerProfile: true },
+          });
+        }
+
+        const token = JwtProvider.generateToken({ userId: user.id, email: user.email, role: user.role });
+        return res.json({ token, user: AuthController.toAuthResponse(user), requiresOnboarding: false });
+      }
+
+      const onboardingToken = JwtProvider.generateGoogleOnboardingToken(identity);
+      return res.json({
+        requiresOnboarding: true,
+        onboardingToken,
+        googleProfile: { email: identity.email, fullName: identity.fullName, picture: identity.picture },
+      });
+    } catch (error: any) {
+      const configurationError = String(error.message).includes('GOOGLE_CLIENT_ID');
+      return res.status(configurationError ? 503 : 401).json({
+        error: configurationError ? error.message : 'Não foi possível validar a conta Google.',
+      });
+    }
+  }
+
+  public static async completeGoogleRegistration(req: Request, res: Response) {
+    try {
+      const {
+        onboardingToken, role, phone: rawPhone, fullName: providedName, neighborhood, city,
+        fullAddress, bio, serviceRadiusKm, propertyTypes, acceptsPets,
+      } = req.body;
+      const phone = normalizePhone(rawPhone);
+
+      if (!onboardingToken || !['CLIENT', 'PROVIDER'].includes(role)) {
+        return res.status(400).json({ error: 'Dados de conclusão do cadastro inválidos.' });
+      }
+      if (!isValidMobilePhone(phone)) {
+        return res.status(400).json({ error: 'Informe um celular válido com DDD e 11 dígitos.' });
+      }
+      if (!neighborhood || !city || (role === 'CLIENT' && !fullAddress)) {
+        return res.status(400).json({ error: 'Preencha todos os campos obrigatórios.' });
+      }
+
+      const identity = JwtProvider.verifyGoogleOnboardingToken(onboardingToken);
+      const fullName = String(providedName || identity.fullName).trim();
+      if (!fullName) {
+        return res.status(400).json({ error: 'Informe seu nome completo.' });
+      }
+
+      const existing = await prisma.user.findFirst({
+        where: {
+          OR: [{ email: identity.email }, { phone }, { googleId: identity.googleId }],
+          ...(identity.existingUserId ? { NOT: { id: identity.existingUserId } } : {}),
+        },
+      });
+      if (existing) {
+        return res.status(409).json({ error: 'E-mail, telefone ou conta Google já cadastrados. Faça login novamente.' });
+      }
+
+      const coords = await GeocodingService.getCoordinates(neighborhood, city);
+      const user = await prisma.$transaction(async tx => {
+        const userData: any = {
+            email: identity.email,
+            phone,
+            passwordHash: null,
+            googleId: identity.googleId,
+            emailVerified: true,
+            role,
+            status: 'ACTIVE',
+            ...(role === 'CLIENT' ? {
+              clientProfile: { create: { fullName, neighborhood, city, fullAddress, latitude: coords?.latitude, longitude: coords?.longitude } },
+            } : {
+              providerProfile: { create: {
+                fullName,
+                bio: bio || 'Profissional de serviços domésticos',
+                photoUrl: identity.picture,
+                serviceRadiusKm: serviceRadiusKm ? Number(serviceRadiusKm) : 10,
+                propertyTypes: Array.isArray(propertyTypes) ? propertyTypes : [],
+                acceptsPets: acceptsPets !== false,
+                isNewProvider: true,
+                coverageAreas: { create: { city, neighborhood, latitude: coords?.latitude, longitude: coords?.longitude } },
+              } },
+            }),
+        };
+
+        const created = identity.existingUserId
+          ? await tx.user.update({
+              where: { id: identity.existingUserId },
+              data: userData,
+              include: { clientProfile: true, providerProfile: true },
+            })
+          : await tx.user.create({
+              data: userData,
+              include: { clientProfile: true, providerProfile: true },
+            });
+
+        if (role === 'PROVIDER') {
+          const cleaningCategory = await tx.category.upsert({
+            where: { name: SERVICE_CATEGORIES[0].name },
+            update: SERVICE_CATEGORIES[0],
+            create: SERVICE_CATEGORIES[0],
+          });
+          await tx.providerService.create({
+            data: { providerId: created.providerProfile!.id, categoryId: cleaningCategory.id, basePrice: 100 },
+          });
+        }
+        return created;
+      });
+
+      const token = JwtProvider.generateToken({ userId: user.id, email: user.email, role: user.role });
+      return res.status(201).json({ token, user: AuthController.toAuthResponse(user), requiresOnboarding: false });
+    } catch (error: any) {
+      if (error?.name === 'TokenExpiredError' || error?.name === 'JsonWebTokenError') {
+        return res.status(401).json({ error: 'Sua sessão de cadastro expirou. Entre com o Google novamente.' });
+      }
+      return res.status(500).json({ error: 'Erro ao concluir o cadastro com Google.', details: error.message });
+    }
+  }
+
   public static async registerClient(req: Request, res: Response) {
     try {
       const { email, phone: rawPhone, password, fullName, neighborhood, city, fullAddress } = req.body;
@@ -76,7 +246,7 @@ export class AuthController {
 
   public static async registerProvider(req: Request, res: Response) {
     try {
-      const { email, phone: rawPhone, password, fullName, bio, serviceRadiusKm, city, neighborhood, categoryIds } = req.body;
+      const { email, phone: rawPhone, password, fullName, bio, serviceRadiusKm, city, neighborhood, propertyTypes, acceptsPets } = req.body;
       const phone = normalizePhone(rawPhone);
 
       if (!email || !phone || !password || !fullName || !city || !neighborhood) {
@@ -110,6 +280,8 @@ export class AuthController {
               fullName,
               bio: bio || 'Profissional de serviços domésticos',
               serviceRadiusKm: serviceRadiusKm ? parseFloat(serviceRadiusKm) : 10.0,
+              propertyTypes: Array.isArray(propertyTypes) ? propertyTypes : [],
+              acceptsPets: acceptsPets !== false,
               isNewProvider: true,
               coverageAreas: {
                 create: {
@@ -125,18 +297,14 @@ export class AuthController {
         include: { providerProfile: true },
       });
 
-      // Associate categories if provided
-      if (categoryIds && Array.isArray(categoryIds)) {
-        for (const catId of categoryIds) {
-          await prisma.providerService.create({
-            data: {
-              providerId: user.providerProfile!.id,
-              categoryId: catId,
-              basePrice: 100.0,
-            },
-          });
-        }
-      }
+      const cleaningCategory = await prisma.category.upsert({
+        where: { name: SERVICE_CATEGORIES[0].name },
+        update: SERVICE_CATEGORIES[0],
+        create: SERVICE_CATEGORIES[0],
+      });
+      await prisma.providerService.create({
+        data: { providerId: user.providerProfile!.id, categoryId: cleaningCategory.id, basePrice: 100 },
+      });
 
       const token = JwtProvider.generateToken({
         userId: user.id,
@@ -176,6 +344,9 @@ export class AuthController {
         return res.status(401).json({ error: 'Credenciais inválidas.' });
       }
 
+      if (!user.passwordHash) {
+        return res.status(401).json({ error: 'Esta conta utiliza login com Google.' });
+      }
       const validPassword = await PasswordHasher.compare(password, user.passwordHash);
       if (!validPassword) {
         return res.status(401).json({ error: 'Credenciais inválidas.' });

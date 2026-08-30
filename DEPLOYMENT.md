@@ -24,3 +24,13 @@ push.
 - Frontend: `https://project-lar-web.vercel.app`
 - API: `https://project-lar-api.onrender.com/api`
 - Health check: `https://project-lar-api.onrender.com/api/health`
+# Login com Google
+
+Configure `GOOGLE_CLIENT_ID` com o Client ID OAuth 2.0 do tipo **Aplicativo da Web** criado no Google Cloud. Use o mesmo valor configurado no frontend.
+
+No Google Cloud, inclua como origens JavaScript autorizadas:
+
+- `http://localhost:4200`
+- a URL pública do frontend em produção
+
+O backend valida o ID token recebido com a biblioteca oficial `google-auth-library`; nenhum segredo OAuth precisa ser enviado ao navegador.

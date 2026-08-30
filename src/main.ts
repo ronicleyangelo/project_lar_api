@@ -40,6 +40,8 @@ app.get('/api/health', (req, res) => {
 app.post('/api/auth/register-client', AuthController.registerClient);
 app.post('/api/auth/register-provider', AuthController.registerProvider);
 app.post('/api/auth/login', AuthController.login);
+app.post('/api/auth/google', AuthController.googleLogin);
+app.post('/api/auth/google/complete', AuthController.completeGoogleRegistration);
 app.get('/api/auth/me', authenticateToken, AuthController.getCurrentUser);
 
 // Categories

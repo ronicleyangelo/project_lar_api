@@ -14,7 +14,6 @@ async function seed() {
     })
   ));
   const catLimpeza = categories.find(category => category.name === 'Limpeza Residencial')!;
-  const catReparos = categories.find(category => category.name === 'Pequenos Reparos')!;
 
   console.log('Categories created:', categories.map(category => category.name).join(', '));
 
@@ -94,14 +93,14 @@ async function seed() {
     where: { email: 'carlos.reparos@exemplo.com' },
     update: {},
     create: {
-      email: 'carlos.reparos@exemplo.com',
+      email: 'bruna.faxina@exemplo.com',
       phone: '(11) 96666-3333',
       passwordHash,
       role: 'PROVIDER',
       providerProfile: {
         create: {
-          fullName: 'Carlos Eduardo Oliveira',
-          bio: 'Marido de aluguel e técnico em pequenos reparos elétricos, hidráulicos e montagem de móveis.',
+          fullName: 'Bruna Oliveira',
+          bio: 'Profissional de faxina residencial, com experiência em casas, apartamentos e limpezas recorrentes.',
           photoUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150',
           serviceRadiusKm: 12.0,
           trustScore: 4.90,
@@ -116,7 +115,7 @@ async function seed() {
           },
           services: {
             create: [
-              { categoryId: catReparos.id, basePrice: 120.0, description: 'Visita técnica e reparos de até 2 horas.' },
+              { categoryId: catLimpeza.id, basePrice: 140.0, description: 'Faxina residencial completa.' },
             ],
           },
         },
