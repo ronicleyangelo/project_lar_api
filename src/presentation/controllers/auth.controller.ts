@@ -83,6 +83,7 @@ export class AuthController {
         googleProfile: { email: identity.email, fullName: identity.fullName, picture: identity.picture },
       });
     } catch (error: any) {
+      console.error('[GoogleLogin] Erro detalhado na validação do Google:', error);
       const configurationError = String(error.message).includes('GOOGLE_CLIENT_ID');
       return res.status(configurationError ? 503 : 401).json({
         error: configurationError ? error.message : 'Não foi possível validar a conta Google.',
