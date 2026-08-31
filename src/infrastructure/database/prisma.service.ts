@@ -1,4 +1,7 @@
 import { PrismaClient } from '@prisma/client';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export class PrismaService extends PrismaClient {
   private static instance: PrismaService;
