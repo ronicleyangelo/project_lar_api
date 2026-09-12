@@ -12,7 +12,8 @@ export class ActivityController {
       })));
       return res.json(await prisma.serviceActivity.findMany({ where: { active: true }, orderBy: [{ includedByDefault: 'desc' }, { name: 'asc' }] }));
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao listar atividades.', details: error.message });
+      console.error('Erro ao listar atividades:', error);
+      return res.status(500).json({ error: 'Erro ao listar atividades.' });
     }
   }
 }

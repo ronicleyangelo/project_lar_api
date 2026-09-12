@@ -1,6 +1,15 @@
 import { prisma } from './prisma.service';
 import { PasswordHasher } from '../security/password.hasher';
 import { SERVICE_CATEGORIES } from '../../domain/constants/service-categories';
+import { EncryptionUtil } from '../security/encryption.util';
+import { GeospatialFuzzingUtil } from '../security/geospatial-fuzzing.util';
+
+const protectedCoordinates = (latitude: number, longitude: number) => ({
+  latitude: EncryptionUtil.encrypt(latitude),
+  longitude: EncryptionUtil.encrypt(longitude),
+  approximateLat: GeospatialFuzzingUtil.fuzzCoordinate(latitude),
+  approximateLng: GeospatialFuzzingUtil.fuzzCoordinate(longitude),
+});
 
 async function seed() {
   console.log('Seeding initial data for Projeto Lar...');
@@ -46,9 +55,8 @@ async function seed() {
           fullName: 'Maria da Silva',
           neighborhood: 'Moema',
           city: 'São Paulo',
-          fullAddress: 'Rua Normandia, 150, Apto 42 - Moema, São Paulo - SP',
-          latitude: -23.6000,
-          longitude: -46.6667,
+          fullAddress: EncryptionUtil.encrypt('Rua Normandia, 150, Apto 42 - Moema, São Paulo - SP')!,
+          ...protectedCoordinates(-23.6000, -46.6667),
         },
       },
     },
@@ -75,8 +83,8 @@ async function seed() {
           isNewProvider: false,
           coverageAreas: {
             create: [
-              { city: 'São Paulo', neighborhood: 'Moema', latitude: -23.6000, longitude: -46.6667 },
-              { city: 'São Paulo', neighborhood: 'Vila Mariana', latitude: -23.5833, longitude: -46.6333 },
+              { city: 'São Paulo', neighborhood: 'Moema', ...protectedCoordinates(-23.6000, -46.6667) },
+              { city: 'São Paulo', neighborhood: 'Vila Mariana', ...protectedCoordinates(-23.5833, -46.6333) },
             ],
           },
           services: {
@@ -109,8 +117,8 @@ async function seed() {
           isNewProvider: false,
           coverageAreas: {
             create: [
-              { city: 'São Paulo', neighborhood: 'Moema', latitude: -23.6000, longitude: -46.6667 },
-              { city: 'São Paulo', neighborhood: 'Pinheiros', latitude: -23.5667, longitude: -46.7000 },
+              { city: 'São Paulo', neighborhood: 'Moema', ...protectedCoordinates(-23.6000, -46.6667) },
+              { city: 'São Paulo', neighborhood: 'Pinheiros', ...protectedCoordinates(-23.5667, -46.7000) },
             ],
           },
           services: {

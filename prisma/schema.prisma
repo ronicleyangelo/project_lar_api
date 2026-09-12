@@ -18,8 +18,12 @@ model User {
   status               String    @default("ACTIVE") // ACTIVE, SUSPENDED, PENDING
   emailVerified        Boolean   @default(false)
   phoneVerified        Boolean   @default(false)
-  profileVisible       Boolean   @default(true)
-  allowRecommendations Boolean   @default(true)
+  profileVisible       Boolean   @default(false)
+  allowRecommendations Boolean   @default(false)
+  privacyPolicyVersion String?
+  privacyAcceptedAt    DateTime?
+  termsVersion         String?
+  termsAcceptedAt      DateTime?
   deletionRequestedAt  DateTime?
   scheduledDeletionAt  DateTime?
   createdAt            DateTime  @default(now())
@@ -36,11 +40,13 @@ model ClientProfile {
   userId       String   @unique
   fullName     String
   neighborhood String
-  city         String
-  latitude     Float?
-  longitude    Float?
-  fullAddress  String // Protected - masked until quote accepted
-  createdAt    DateTime @default(now())
+  city             String
+  latitude         String? // Encrypted exact latitude
+  longitude        String? // Encrypted exact longitude
+  approximateLat   Float?  // Fuzzed/Rounded latitude for distance search
+  approximateLng   Float?  // Fuzzed/Rounded longitude for distance search
+  fullAddress      String  // Encrypted full address
+  createdAt        DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -80,6 +86,8 @@ model ProviderProfile {
   reviewsReceived Review[]
   activities      ProviderActivity[]
   favoritedBy     Favorite[]
+  mercadoPagoConnection MercadoPagoConnection?
+  payments        MarketplacePayment[]
 }
 
 model Favorite {
@@ -152,9 +160,11 @@ model CoverageArea {
   id           String @id @default(uuid())
   providerId   String
   city         String
-  neighborhood String
-  latitude     Float?
-  longitude    Float?
+  neighborhood     String
+  latitude         String? // Encrypted exact latitude
+  longitude        String? // Encrypted exact longitude
+  approximateLat   Float?  // Fuzzed/Rounded latitude for distance search
+  approximateLng   Float?  // Fuzzed/Rounded longitude for distance search
 
   provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
@@ -179,8 +189,10 @@ model ServiceRequest {
   categoryId       String
   city             String
   neighborhood     String
-  latitude         Float?
-  longitude        Float?
+  latitude         String? // Encrypted exact latitude
+  longitude        String? // Encrypted exact longitude
+  approximateLat   Float?  // Fuzzed/Rounded latitude for distance search
+  approximateLng   Float?  // Fuzzed/Rounded longitude for distance search
   approxDistanceKm Float    @default(2.5)
   scheduledDate    DateTime
   timeSlot         String
@@ -247,9 +259,56 @@ model Appointment {
   provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
   review   Review?
   dispute  Dispute?
+  payment  MarketplacePayment?
 
   @@index([clientId, createdAt])
   @@index([providerId, createdAt])
+}
+
+model MercadoPagoConnection {
+  id                    String   @id @default(uuid())
+  providerId            String   @unique
+  mercadoPagoUserId     String   @unique
+  encryptedAccessToken  String
+  encryptedRefreshToken String?
+  expiresAt             DateTime?
+  testMode              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  provider ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+}
+
+model MercadoPagoOAuthState {
+  state             String   @id
+  providerId        String
+  encryptedVerifier String
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model MarketplacePayment {
+  id                       String   @id @default(uuid())
+  appointmentId            String   @unique
+  providerId               String
+  amount                    Float
+  platformFee               Float
+  providerAmount            Float
+  status                    String   @default("PENDING")
+  mercadoPagoPreferenceId   String?  @unique
+  mercadoPagoPaymentId      String?  @unique
+  checkoutUrl               String?
+  testMode                  Boolean  @default(true)
+  approvedAt                DateTime?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  appointment Appointment       @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  provider    ProviderProfile   @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@index([providerId, status])
 }
 
 model Review {

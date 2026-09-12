@@ -48,7 +48,7 @@ export class ReviewController {
       }
 
       if (appointment.clientId !== client.id) {
-        return res.status(403).json({ error: 'Você só pode avaliar serviços contratados por você.' });
+        return res.status(404).json({ error: 'Agendamento não encontrado.' });
       }
 
       if (appointment.status !== 'COMPLETED') {
@@ -114,7 +114,8 @@ export class ReviewController {
       if (error.code === 'P2002') {
         return res.status(409).json({ error: 'Este agendamento já possui uma avaliação registrada.' });
       }
-      return res.status(500).json({ error: 'Erro ao criar avaliação.', details: error.message });
+      console.error('Erro ao criar avaliação:', error);
+      return res.status(500).json({ error: 'Erro ao criar avaliação.' });
     }
   }
 
@@ -130,7 +131,8 @@ export class ReviewController {
 
       return res.json(reviews);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao carregar avaliações.', details: error.message });
+      console.error('Erro ao carregar avaliações:', error);
+      return res.status(500).json({ error: 'Erro ao carregar avaliações.' });
     }
   }
 }

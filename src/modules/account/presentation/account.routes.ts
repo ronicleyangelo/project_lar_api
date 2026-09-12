@@ -7,6 +7,7 @@ import { UpdatePrivacyUseCase } from '../application/use-cases/update-privacy.us
 import { UpdatePasswordUseCase } from '../application/use-cases/update-password.use-case';
 import { RequestAccountDeletionUseCase } from '../application/use-cases/delete-account.use-case';
 import { CancelAccountDeletionUseCase } from '../application/use-cases/cancel-account-deletion.use-case';
+import { ExportAccountDataUseCase } from '../application/use-cases/export-account-data.use-case';
 import { BcryptPasswordService } from '../infrastructure/bcrypt-password.service';
 import { PrismaAccountRepository } from '../infrastructure/prisma-account.repository';
 import { AccountController } from './account.controller';
@@ -20,11 +21,13 @@ const controller = new AccountController(
   new UpdatePasswordUseCase(accounts, passwords),
   new RequestAccountDeletionUseCase(accounts, passwords),
   new CancelAccountDeletionUseCase(accounts),
+  new ExportAccountDataUseCase(accounts),
 );
 
 export const accountRouter = Router();
 accountRouter.use(authenticateToken);
 accountRouter.get('/', asyncHandler((req, res) => controller.get(req as AuthenticatedRequest, res)));
+accountRouter.get('/export', asyncHandler((req, res) => controller.export(req as AuthenticatedRequest, res)));
 accountRouter.put('/privacy', validateBody(privacySchema), asyncHandler((req, res) => controller.privacy(req as AuthenticatedRequest, res)));
 accountRouter.put('/password', validateBody(passwordSchema), asyncHandler((req, res) => controller.password(req as AuthenticatedRequest, res)));
 accountRouter.post('/deletion', validateBody(deleteAccountSchema), asyncHandler((req, res) => controller.requestAccountDeletion(req as AuthenticatedRequest, res)));

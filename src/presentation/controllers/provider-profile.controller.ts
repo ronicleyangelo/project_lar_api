@@ -2,6 +2,8 @@ import { Response } from 'express';
 import { prisma } from '../../infrastructure/database/prisma.service';
 import { GeocodingService } from '../../infrastructure/geolocation/geocoding.service';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { GeospatialFuzzingUtil } from '../../infrastructure/security/geospatial-fuzzing.util';
+import { EncryptionUtil } from '../../infrastructure/security/encryption.util';
 
 const normalizePhone = (value: unknown): string => String(value ?? '').replace(/\D/g, '');
 const isValidMobilePhone = (value: string): boolean => /^[1-9]{2}9\d{8}$/.test(value);
@@ -52,7 +54,8 @@ export class ProviderProfileController {
         reviewCount: user.providerProfile.reviewCount,
       });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao carregar o perfil profissional.', details: error.message });
+      console.error('Erro ao carregar o perfil profissional:', error);
+      return res.status(500).json({ error: 'Erro ao carregar o perfil profissional.' });
     }
   }
 
@@ -117,7 +120,15 @@ export class ProviderProfileController {
             acceptsPets: acceptsPets !== false,
             coverageAreas: {
               deleteMany: {},
-              create: { city: String(city).trim(), neighborhood: String(neighborhood).trim(), latitude: coords?.latitude, longitude: coords?.longitude },
+              create: {
+                city: String(city).trim(), neighborhood: String(neighborhood).trim(),
+                // Escrita aninhada: criptografa explicitamente, pois o middleware
+                // do Prisma recebe esta operação como ProviderProfile.update.
+                latitude: EncryptionUtil.encrypt(coords?.latitude),
+                longitude: EncryptionUtil.encrypt(coords?.longitude),
+                approximateLat: GeospatialFuzzingUtil.fuzzCoordinate(coords?.latitude),
+                approximateLng: GeospatialFuzzingUtil.fuzzCoordinate(coords?.longitude),
+              },
             },
           },
         });
@@ -136,7 +147,8 @@ export class ProviderProfileController {
       return ProviderProfileController.getProfile(req, res);
     } catch (error: any) {
       console.error('[ProviderProfile] Falha ao atualizar perfil:', error);
-      return res.status(500).json({ error: 'Erro ao atualizar o perfil profissional.', details: error.message });
+      console.error('Erro ao atualizar o perfil profissional:', error);
+      return res.status(500).json({ error: 'Erro ao atualizar o perfil profissional.' });
     }
   }
 
@@ -159,7 +171,8 @@ export class ProviderProfileController {
       });
       return res.json({ message: 'Perfil enviado para análise. Você será avisado quando a equipe concluir.' });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao enviar o perfil para análise.', details: error.message });
+      console.error('Erro ao enviar o perfil para análise:', error);
+      return res.status(500).json({ error: 'Erro ao enviar o perfil para análise.' });
     }
   }
 }

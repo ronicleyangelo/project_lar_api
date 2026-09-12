@@ -6,9 +6,17 @@ import { GeocodingService } from '../../infrastructure/geolocation/geocoding.ser
 import { GoogleAuthProvider } from '../../infrastructure/security/google-auth.provider';
 import { SERVICE_CATEGORIES } from '../../domain/constants/service-categories';
 import { setTokenCookie, clearTokenCookie } from '../../shared/http/cookie.helper';
+import { EncryptionUtil } from '../../infrastructure/security/encryption.util';
+import { GeospatialFuzzingUtil } from '../../infrastructure/security/geospatial-fuzzing.util';
 
 const normalizePhone = (value: unknown): string => String(value ?? '').replace(/\D/g, '');
 const isValidMobilePhone = (value: string): boolean => /^[1-9]{2}9\d{8}$/.test(value);
+const protectedCoordinates = (coordinates: { latitude: number; longitude: number } | null) => ({
+  latitude: EncryptionUtil.encrypt(coordinates?.latitude),
+  longitude: EncryptionUtil.encrypt(coordinates?.longitude),
+  approximateLat: GeospatialFuzzingUtil.fuzzCoordinate(coordinates?.latitude),
+  approximateLng: GeospatialFuzzingUtil.fuzzCoordinate(coordinates?.longitude),
+});
 
 export class AuthController {
   private static toAuthResponse(user: any) {
@@ -137,7 +145,11 @@ export class AuthController {
             role,
             status: 'ACTIVE',
             ...(role === 'CLIENT' ? {
-              clientProfile: { create: { fullName, neighborhood, city, fullAddress, latitude: coords?.latitude, longitude: coords?.longitude } },
+              clientProfile: { create: {
+                fullName, neighborhood, city,
+                fullAddress: EncryptionUtil.encrypt(fullAddress)!,
+                ...protectedCoordinates(coords),
+              } },
             } : {
               providerProfile: { create: {
                 fullName,
@@ -147,7 +159,7 @@ export class AuthController {
                 propertyTypes: Array.isArray(propertyTypes) ? propertyTypes : [],
                 acceptsPets: acceptsPets !== false,
                 isNewProvider: true,
-                coverageAreas: { create: { city, neighborhood, latitude: coords?.latitude, longitude: coords?.longitude } },
+                coverageAreas: { create: { city, neighborhood, ...protectedCoordinates(coords) } },
               } },
             }),
         };
@@ -176,9 +188,10 @@ export class AuthController {
         return created;
       });
 
-      const token = JwtProvider.generateToken({ userId: user.id, email: user.email, role: user.role });
+      const typedUser = user as any;
+      const token = JwtProvider.generateToken({ userId: typedUser.id, email: typedUser.email, role: typedUser.role });
       setTokenCookie(res, token);
-      return res.status(201).json({ token, user: AuthController.toAuthResponse(user), requiresOnboarding: false });
+      return res.status(201).json({ token, user: AuthController.toAuthResponse(typedUser), requiresOnboarding: false });
     } catch (error: any) {
       if (error?.name === 'TokenExpiredError' || error?.name === 'JsonWebTokenError') {
         return res.status(401).json({ error: 'Sua sessão de cadastro expirou. Entre com o Google novamente.' });
@@ -223,9 +236,8 @@ export class AuthController {
               fullName,
               neighborhood,
               city,
-              fullAddress,
-              latitude: coords?.latitude,
-              longitude: coords?.longitude,
+              fullAddress: EncryptionUtil.encrypt(fullAddress)!,
+              ...protectedCoordinates(coords),
             },
           },
         },
@@ -298,8 +310,7 @@ export class AuthController {
                 create: {
                   city,
                   neighborhood,
-                  latitude: coords?.latitude,
-                  longitude: coords?.longitude,
+                  ...protectedCoordinates(coords),
                 },
               },
             },

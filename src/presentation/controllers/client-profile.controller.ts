@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '../../infrastructure/database/prisma.service';
 import { GeocodingService } from '../../infrastructure/geolocation/geocoding.service';
+import { GeospatialFuzzingUtil } from '../../infrastructure/security/geospatial-fuzzing.util';
 
 const normalizePhone = (value: unknown) => String(value ?? '').replace(/\D/g, '');
 
@@ -29,7 +30,13 @@ export class ClientProfileController {
     const coordinates = await GeocodingService.getCoordinates(neighborhood, city);
     const updated = await prisma.$transaction(async tx => {
       await tx.user.update({ where: { id: req.user.userId }, data: { phone } });
-      return tx.clientProfile.update({ where: { id: profile.id }, data: { fullName: String(fullName).trim(), city: String(city).trim(), neighborhood: String(neighborhood).trim(), fullAddress: String(fullAddress).trim(), latitude: coordinates?.latitude ?? profile.latitude, longitude: coordinates?.longitude ?? profile.longitude } });
+      return tx.clientProfile.update({ where: { id: profile.id }, data: {
+        fullName: String(fullName).trim(), city: String(city).trim(), neighborhood: String(neighborhood).trim(), fullAddress: String(fullAddress).trim(),
+        latitude: coordinates ? String(coordinates.latitude) : profile.latitude,
+        longitude: coordinates ? String(coordinates.longitude) : profile.longitude,
+        approximateLat: coordinates ? GeospatialFuzzingUtil.fuzzCoordinate(coordinates.latitude) : profile.approximateLat,
+        approximateLng: coordinates ? GeospatialFuzzingUtil.fuzzCoordinate(coordinates.longitude) : profile.approximateLng,
+      } });
     });
     return res.json({ message: 'Perfil atualizado com sucesso.', profile: { ...updated, phone } });
   }

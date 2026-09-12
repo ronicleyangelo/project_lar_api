@@ -21,7 +21,8 @@ export class FavoriteController {
       `);
       return res.json(rows.map(row => row.providerId));
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao listar favoritos.', details: error.message });
+      console.error('Erro ao listar favoritos:', error);
+      return res.status(500).json({ error: 'Erro ao listar favoritos.' });
     }
   }
 
@@ -50,7 +51,8 @@ export class FavoriteController {
       `);
       return res.status(201).json({ providerId: provider.id, isFavorite: true });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao adicionar favorito.', details: error.message });
+      console.error('Erro ao adicionar favorito:', error);
+      return res.status(500).json({ error: 'Erro ao adicionar favorito.' });
     }
   }
 
@@ -67,7 +69,8 @@ export class FavoriteController {
       `);
       return res.status(204).send();
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao remover favorito.', details: error.message });
+      console.error('Erro ao remover favorito:', error);
+      return res.status(500).json({ error: 'Erro ao remover favorito.' });
     }
   }
 }

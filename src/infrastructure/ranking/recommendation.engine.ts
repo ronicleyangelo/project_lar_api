@@ -60,8 +60,8 @@ export class RecommendationEngine {
       let minimumDistance: number | null = null;
       if (clientCoords) {
         for (const area of p.coverageAreas) {
-          if (area.latitude == null || area.longitude == null) continue;
-          const distance = GeocodingService.calculateDistance(clientCoords.latitude, clientCoords.longitude, area.latitude, area.longitude);
+          if (area.approximateLat == null || area.approximateLng == null) continue;
+          const distance = GeocodingService.calculateDistance(clientCoords.latitude, clientCoords.longitude, area.approximateLat, area.approximateLng);
           minimumDistance = minimumDistance == null ? distance : Math.min(minimumDistance, distance);
         }
       }

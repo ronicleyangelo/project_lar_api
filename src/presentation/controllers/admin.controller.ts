@@ -42,7 +42,8 @@ export class AdminController {
         },
       });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao obter métricas de administração.', details: error.message });
+      console.error('Erro ao obter métricas de administração:', error);
+      return res.status(500).json({ error: 'Erro ao obter métricas de administração.' });
     }
   }
 
@@ -59,7 +60,8 @@ export class AdminController {
       });
       return res.json(providers);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao listar profissionais.', details: error.message });
+      console.error('Erro ao listar profissionais:', error);
+      return res.status(500).json({ error: 'Erro ao listar profissionais.' });
     }
   }
 
@@ -78,7 +80,8 @@ export class AdminController {
       if (!provider) return res.status(404).json({ error: 'Profissional não encontrado.' });
       return res.json(provider);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao obter o profissional.', details: error.message });
+      console.error('Erro ao obter o profissional:', error);
+      return res.status(500).json({ error: 'Erro ao obter o profissional.' });
     }
   }
 
@@ -106,7 +109,8 @@ export class AdminController {
       });
       return res.json({ message: status === 'VERIFIED' ? 'Profissional aprovado.' : 'Análise registrada.', provider: updated });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao analisar profissional.', details: error.message });
+      console.error('Erro ao analisar profissional:', error);
+      return res.status(500).json({ error: 'Erro ao analisar profissional.' });
     }
   }
 
@@ -122,7 +126,8 @@ export class AdminController {
 
       return res.json({ message: 'Selo de verificação atualizado com sucesso!', provider: updated });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao verificar profissional.', details: error.message });
+      console.error('Erro ao verificar profissional:', error);
+      return res.status(500).json({ error: 'Erro ao verificar profissional.' });
     }
   }
 }

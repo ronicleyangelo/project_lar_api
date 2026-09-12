@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '../../infrastructure/database/prisma.service';
 import { canAcceptQuote, canReceiveQuote, QUOTE_STATUS, REQUEST_STATUS } from '../../domain/service-lifecycle';
+import { providerCoversRequest } from '../../domain/provider-coverage.policy';
 
 export class QuoteController {
   public static async sendQuote(req: any, res: Response) {
@@ -31,9 +32,7 @@ export class QuoteController {
         return res.status(403).json({ error: 'O profissional nao oferece a categoria solicitada.' });
       }
 
-      const coversRequest = provider.coverageAreas.some(
-        (area) => area.city === requestItem.city && area.neighborhood === requestItem.neighborhood
-      );
+      const coversRequest = providerCoversRequest(provider.serviceRadiusKm, provider.coverageAreas, requestItem);
       if (!coversRequest) {
         return res.status(403).json({ error: 'O pedido esta fora da area de atendimento cadastrada.' });
       }
@@ -61,7 +60,8 @@ export class QuoteController {
       return res.status(201).json({ message: 'Proposta enviada com sucesso!', quote });
     } catch (error: any) {
       if (error.code === 'P2002') return res.status(409).json({ error: 'Voce ja enviou uma proposta para este pedido.' });
-      return res.status(500).json({ error: 'Erro ao enviar proposta.', details: error.message });
+      console.error('Erro ao enviar proposta:', error);
+      return res.status(500).json({ error: 'Erro ao enviar proposta.' });
     }
   }
 
@@ -78,7 +78,7 @@ export class QuoteController {
       });
       if (!quote) return res.status(404).json({ error: 'Orcamento nao encontrado.' });
       if (quote.request.clientId !== client.id) {
-        return res.status(403).json({ error: 'Voce nao tem permissao para aceitar este orcamento.' });
+        return res.status(404).json({ error: 'Orcamento nao encontrado.' });
       }
       if (!canAcceptQuote(quote.request.status, quote.status)) {
         return res.status(409).json({ error: 'Esta proposta nao pode mais ser aceita.' });
@@ -126,7 +126,8 @@ export class QuoteController {
       if (error.message === 'QUOTE_NO_LONGER_AVAILABLE' || error.code === 'P2002') {
         return res.status(409).json({ error: 'Outra proposta ja foi aceita para este pedido.' });
       }
-      return res.status(500).json({ error: 'Erro ao aceitar orcamento.', details: error.message });
+      console.error('Erro ao aceitar orçamento:', error);
+      return res.status(500).json({ error: 'Erro ao aceitar orçamento.' });
     }
   }
 }

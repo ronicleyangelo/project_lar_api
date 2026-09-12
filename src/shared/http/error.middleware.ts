@@ -4,6 +4,13 @@ import { AppError } from '../errors/app-error';
 
 export function errorMiddleware(error: unknown, req: Request, res: Response, next: NextFunction) {
   if (res.headersSent) return next(error);
+  const httpError = error as { type?: string; status?: number };
+  if (httpError.type === 'entity.too.large' || httpError.status === 413) {
+    return res.status(413).json({ error: 'Corpo da requisição muito grande.', code: 'PAYLOAD_TOO_LARGE' });
+  }
+  if (httpError.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'JSON inválido.', code: 'INVALID_JSON' });
+  }
   if (error instanceof ZodError) {
     return res.status(400).json({
       error: 'Dados inválidos.',

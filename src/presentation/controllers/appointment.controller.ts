@@ -8,11 +8,12 @@ export class AppointmentController {
   private static async getAppointmentForUser(id: string, userId: string) {
     const appointment = await prisma.appointment.findUnique({
       where: { id },
-      include: { client: true, provider: true, request: true },
+      include: { client: true, provider: true, request: true, payment: true },
     });
     if (!appointment) return { error: 'NOT_FOUND' as const };
     if (appointment.client.userId !== userId && appointment.provider.userId !== userId) {
-      return { error: 'FORBIDDEN' as const };
+      // Não revela se um identificador pertencente a outra pessoa existe.
+      return { error: 'NOT_FOUND' as const };
     }
     return { appointment };
   }
@@ -23,11 +24,14 @@ export class AppointmentController {
       const userId = req.user.userId;
       const result = await AppointmentController.getAppointmentForUser(id, userId);
       if ('error' in result) {
-        return res.status(result.error === 'NOT_FOUND' ? 404 : 403).json({ error: 'Agendamento não encontrado ou acesso negado.' });
+        return res.status(404).json({ error: 'Agendamento não encontrado.' });
       }
       const { appointment } = result;
       if (appointment.provider.userId !== userId) {
         return res.status(403).json({ error: 'Somente o profissional pode iniciar o serviço.' });
+      }
+      if (process.env.PAYMENTS_REQUIRED === 'true' && appointment.payment?.status !== 'APPROVED') {
+        return res.status(409).json({ error: 'O pagamento precisa ser aprovado antes do início do serviço.' });
       }
       assertAppointmentTransition(appointment.status, APPOINTMENT_STATUS.IN_PROGRESS);
 
@@ -52,7 +56,7 @@ export class AppointmentController {
       const userId = req.user.userId;
       const result = await AppointmentController.getAppointmentForUser(id, userId);
       if ('error' in result) {
-        return res.status(result.error === 'NOT_FOUND' ? 404 : 403).json({ error: 'Agendamento não encontrado ou acesso negado.' });
+        return res.status(404).json({ error: 'Agendamento não encontrado.' });
       }
       const { appointment } = result;
       if (appointment.provider.userId !== userId) {
@@ -81,7 +85,7 @@ export class AppointmentController {
       const userId = req.user.userId;
       const result = await AppointmentController.getAppointmentForUser(id, userId);
       if ('error' in result) {
-        return res.status(result.error === 'NOT_FOUND' ? 404 : 403).json({ error: 'Agendamento não encontrado ou acesso negado.' });
+        return res.status(404).json({ error: 'Agendamento não encontrado.' });
       }
       const { appointment } = result;
       if (appointment.client.userId !== userId) {
@@ -117,7 +121,7 @@ export class AppointmentController {
         if (!client) return res.status(400).json({ error: 'Perfil de cliente não encontrado.' });
         const appointments = await prisma.appointment.findMany({
           where: { clientId: client.id },
-          include: { provider: true, request: { include: { category: true } }, review: true },
+          include: { provider: true, request: { include: { category: true } }, quote: true, payment: true, review: true },
           orderBy: { createdAt: 'desc' }
         });
         return res.json(appointments);
@@ -126,7 +130,13 @@ export class AppointmentController {
         if (!provider) return res.status(400).json({ error: 'Perfil de profissional não encontrado.' });
         const appointments = await prisma.appointment.findMany({
           where: { providerId: provider.id },
-          include: { client: true, request: { include: { category: true } }, review: true },
+          include: {
+            client: { include: { user: { select: { avatarUrl: true } } } },
+            request: { include: { category: true } },
+            quote: true,
+            payment: true,
+            review: true
+          },
           orderBy: { createdAt: 'desc' }
         });
         return res.json(appointments);

@@ -10,7 +10,8 @@ export class CategoryController {
       });
       return res.json(categories);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao listar categorias.', details: error.message });
+      console.error('Erro ao listar categorias:', error);
+      return res.status(500).json({ error: 'Erro ao listar categorias.' });
     }
   }
 
@@ -29,7 +30,8 @@ export class CategoryController {
       });
       return res.json({ message: 'Categorias iniciais carregadas!', categories });
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao popular categorias.', details: error.message });
+      console.error('Erro ao popular categorias:', error);
+      return res.status(500).json({ error: 'Erro ao popular categorias.' });
     }
   }
 }

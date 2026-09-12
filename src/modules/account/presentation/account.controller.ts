@@ -5,6 +5,7 @@ import { UpdatePrivacyUseCase } from '../application/use-cases/update-privacy.us
 import { UpdatePasswordUseCase } from '../application/use-cases/update-password.use-case';
 import { RequestAccountDeletionUseCase } from '../application/use-cases/delete-account.use-case';
 import { CancelAccountDeletionUseCase } from '../application/use-cases/cancel-account-deletion.use-case';
+import { ExportAccountDataUseCase } from '../application/use-cases/export-account-data.use-case';
 
 export class AccountController {
   constructor(
@@ -13,6 +14,7 @@ export class AccountController {
     private readonly updatePassword: UpdatePasswordUseCase,
     private readonly requestDeletion: RequestAccountDeletionUseCase,
     private readonly cancelDeletionUseCase: CancelAccountDeletionUseCase,
+    private readonly exportAccountData: ExportAccountDataUseCase,
   ) {}
 
   get = async (req: AuthenticatedRequest, res: Response) =>
@@ -32,5 +34,11 @@ export class AccountController {
   cancelAccountDeletion = async (req: AuthenticatedRequest, res: Response) => {
     await this.cancelDeletionUseCase.execute(req.user!.userId);
     return res.json({ message: 'Solicitação de exclusão cancelada.' });
+  };
+
+  export = async (req: AuthenticatedRequest, res: Response) => {
+    const data = await this.exportAccountData.execute(req.user!.userId);
+    res.setHeader('Content-Disposition', 'attachment; filename="projeto-lar-dados.json"');
+    return res.json(data);
   };
 }

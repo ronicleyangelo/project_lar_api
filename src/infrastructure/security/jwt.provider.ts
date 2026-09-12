@@ -17,7 +17,15 @@ export interface GoogleOnboardingPayload {
 
 export class JwtProvider {
   private static get secret(): string {
-    return process.env.JWT_SECRET || 'fallback_secret_key_2026';
+    const secret = process.env.JWT_SECRET;
+    if (!secret || secret.length < 32) {
+      throw new Error('JWT_SECRET deve ser configurado com pelo menos 32 caracteres.');
+    }
+    return secret;
+  }
+
+  public static assertConfigured(): void {
+    void this.secret;
   }
 
   public static generateToken(payload: TokenPayload): string {

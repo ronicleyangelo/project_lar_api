@@ -4,6 +4,7 @@ import { prisma } from '../../infrastructure/database/prisma.service';
 import { RecommendationEngine } from '../../infrastructure/ranking/recommendation.engine';
 import { PrivacyService } from '../middlewares/privacy.middleware';
 import { GeocodingService } from '../../infrastructure/geolocation/geocoding.service';
+import { providerCoversRequest } from '../../domain/provider-coverage.policy';
 
 const normalizeText = (value: unknown): string => String(value ?? '').trim().replace(/\s+/g, ' ');
 const normalizeFingerprintText = (value: unknown): string => normalizeText(value).toLocaleLowerCase('pt-BR');
@@ -93,7 +94,7 @@ export class RequestController {
         normalizeFingerprintText(clientProfile.city) === normalizeFingerprintText(normalizedCity) &&
         normalizeFingerprintText(clientProfile.neighborhood) === normalizeFingerprintText(normalizedNeighborhood);
       const coordinates = isProfileLocation && clientProfile.latitude != null && clientProfile.longitude != null
-        ? { latitude: clientProfile.latitude, longitude: clientProfile.longitude }
+        ? { latitude: Number(clientProfile.latitude), longitude: Number(clientProfile.longitude) }
         : await GeocodingService.getCoordinates(normalizedNeighborhood, normalizedCity);
 
       const serviceRequest = await prisma.serviceRequest.create({
@@ -103,8 +104,10 @@ export class RequestController {
           categoryId,
           city: normalizedCity,
           neighborhood: normalizedNeighborhood,
-          latitude: coordinates?.latitude ?? clientProfile.latitude,
-          longitude: coordinates?.longitude ?? clientProfile.longitude,
+          latitude: coordinates?.latitude ? String(coordinates.latitude) : (clientProfile.latitude ? String(clientProfile.latitude) : undefined),
+          longitude: coordinates?.longitude ? String(coordinates.longitude) : (clientProfile.longitude ? String(clientProfile.longitude) : undefined),
+          approximateLat: coordinates?.latitude ? Math.floor(coordinates.latitude * 100) / 100 : (clientProfile.approximateLat ?? undefined),
+          approximateLng: coordinates?.longitude ? Math.floor(coordinates.longitude * 100) / 100 : (clientProfile.approximateLng ?? undefined),
           approxDistanceKm: 2.5,
           scheduledDate: parsedDate,
           timeSlot: normalizedTimeSlot,
@@ -134,7 +137,8 @@ export class RequestController {
           });
         }
       }
-      return res.status(500).json({ error: 'Erro ao criar solicitação.', details: error.message });
+      console.error('Erro ao criar solicitação:', error);
+      return res.status(500).json({ error: 'Erro ao criar solicitação.' });
     }
   }
 
@@ -166,7 +170,8 @@ export class RequestController {
       });
       return res.json(rankedProviders);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao gerar recomendações.', details: error.message });
+      console.error('Erro ao gerar recomendações:', error);
+      return res.status(500).json({ error: 'Erro ao gerar recomendações.' });
     }
   }
 
@@ -189,7 +194,8 @@ export class RequestController {
       });
       return res.json(requests);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao listar solicitações.', details: error.message });
+      console.error('Erro ao listar solicitações:', error);
+      return res.status(500).json({ error: 'Erro ao listar solicitações.' });
     }
   }
 
@@ -219,18 +225,13 @@ export class RequestController {
       const visibleRequests = requests.filter((requestItem) => {
         const offeredActivityIds = new Set(provider.activities.map(item => item.activityId));
         if (!requestItem.activities.every(item => offeredActivityIds.has(item.activityId))) return false;
-        if (requestItem.latitude == null || requestItem.longitude == null) return true;
-        return provider.coverageAreas.some((area) => {
-          if (area.latitude == null || area.longitude == null) return false;
-          return GeocodingService.calculateDistance(
-            requestItem.latitude!, requestItem.longitude!, area.latitude, area.longitude
-          ) <= provider.serviceRadiusKm;
-        });
+        return providerCoversRequest(provider.serviceRadiusKm, provider.coverageAreas, requestItem);
       });
 
       return res.json(visibleRequests.map((requestItem) => PrivacyService.maskClientAddress(requestItem, false)));
     } catch (error: any) {
-      return res.status(500).json({ error: 'Erro ao listar solicitações abertas.', details: error.message });
+      console.error('Erro ao listar solicitações abertas:', error);
+      return res.status(500).json({ error: 'Erro ao listar solicitações abertas.' });
     }
   }
 }

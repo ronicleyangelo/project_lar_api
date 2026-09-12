@@ -7,4 +7,5 @@ export interface AccountRepository {
   hasBlockingActivity(id: string): Promise<boolean>;
   requestDeletion(id: string, requestedAt: Date, scheduledAt: Date): Promise<void>;
   cancelDeletion(id: string): Promise<void>;
+  exportData(id: string): Promise<unknown | null>;
 }

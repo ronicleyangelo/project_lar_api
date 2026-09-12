@@ -42,4 +42,38 @@ export class PrismaAccountRepository implements AccountRepository {
       data: { status: 'ACTIVE', deletionRequestedAt: null, scheduledDeletionAt: null },
     });
   }
+
+  async exportData(id: string): Promise<unknown | null> {
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        clientProfile: {
+          include: {
+            serviceRequests: { include: { quotes: true } },
+            appointments: true,
+            reviewsGiven: true,
+            favorites: true,
+          },
+        },
+        providerProfile: {
+          include: {
+            services: { include: { category: true } },
+            coverageAreas: true,
+            quotes: true,
+            appointments: true,
+            reviewsReceived: true,
+          },
+        },
+        auditLogs: true,
+        disputesReported: true,
+      },
+    });
+    if (!user) return null;
+    const { passwordHash, googleId, ...data } = user;
+    return {
+      exportedAt: new Date().toISOString(),
+      googleLinked: Boolean(googleId),
+      ...data,
+    };
+  }
 }
