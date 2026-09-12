@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../../infrastructure/database/prisma.service';
 import { GeocodingService } from '../../infrastructure/geolocation/geocoding.service';
 import { GeospatialFuzzingUtil } from '../../infrastructure/security/geospatial-fuzzing.util';
+import { AvatarStorageService } from '../../infrastructure/media/avatar-storage.service';
 
 const normalizePhone = (value: unknown) => String(value ?? '').replace(/\D/g, '');
 
@@ -9,10 +10,10 @@ export class ClientProfileController {
   static async getProfile(req: any, res: Response) {
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
-      include: { clientProfile: true },
+      include: { clientProfile: true, storedAvatar: { select: { updatedAt: true } } },
     });
     if (!user?.clientProfile) return res.status(404).json({ error: 'Perfil de cliente não encontrado.' });
-    return res.json({ email: user.email, phone: user.phone, avatarUrl: user.avatarUrl, ...user.clientProfile });
+    return res.json({ email: user.email, phone: user.phone, avatarUrl: AvatarStorageService.publicUrl(req, user), ...user.clientProfile });
   }
 
   static async updateProfile(req: any, res: Response) {

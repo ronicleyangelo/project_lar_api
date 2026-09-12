@@ -8,6 +8,7 @@ import { SERVICE_CATEGORIES } from '../../domain/constants/service-categories';
 import { setTokenCookie, clearTokenCookie } from '../../shared/http/cookie.helper';
 import { EncryptionUtil } from '../../infrastructure/security/encryption.util';
 import { GeospatialFuzzingUtil } from '../../infrastructure/security/geospatial-fuzzing.util';
+import { AvatarStorageService, DownloadedAvatar } from '../../infrastructure/media/avatar-storage.service';
 
 const normalizePhone = (value: unknown): string => String(value ?? '').replace(/\D/g, '');
 const isValidMobilePhone = (value: string): boolean => /^[1-9]{2}9\d{8}$/.test(value);
@@ -19,12 +20,12 @@ const protectedCoordinates = (coordinates: { latitude: number; longitude: number
 });
 
 export class AuthController {
-  private static toAuthResponse(user: any) {
+  private static toAuthResponse(req: Request, user: any) {
     return {
       id: user.id,
       email: user.email,
       phone: user.phone,
-      avatarUrl: user.avatarUrl,
+      avatarUrl: AvatarStorageService.publicUrl(req, user),
       role: user.role,
       status: user.status,
       profile: user.role === 'CLIENT' ? user.clientProfile : user.providerProfile,
@@ -41,7 +42,7 @@ export class AuthController {
       const identity = await GoogleAuthProvider.verifyIdToken(credential);
       let user = await prisma.user.findFirst({
         where: { OR: [{ googleId: identity.googleId }, { email: identity.email }] },
-        include: { clientProfile: true, providerProfile: true },
+        include: { clientProfile: true, providerProfile: true, storedAvatar: { select: { updatedAt: true } } },
       });
 
       if (user) {
@@ -69,6 +70,7 @@ export class AuthController {
           });
         }
 
+        const downloadedAvatar = await AvatarStorageService.downloadGoogleAvatar(identity.picture);
         user = await prisma.user.update({
           where: { id: user.id },
           data: {
@@ -76,12 +78,16 @@ export class AuthController {
             emailVerified: true,
             avatarUrl: identity.picture || (user as any).avatarUrl,
           } as any,
-          include: { clientProfile: true, providerProfile: true },
+          include: { clientProfile: true, providerProfile: true, storedAvatar: { select: { updatedAt: true } } },
         });
+        if (downloadedAvatar) {
+          const storedAvatar = await AuthController.saveAvatar(user.id, downloadedAvatar);
+          (user as any).storedAvatar = storedAvatar;
+        }
 
         const token = JwtProvider.generateToken({ userId: user.id, email: user.email, role: user.role });
         setTokenCookie(res, token);
-        return res.json({ token, user: AuthController.toAuthResponse(user), requiresOnboarding: false });
+        return res.json({ token, user: AuthController.toAuthResponse(req, user), requiresOnboarding: false });
       }
 
       const onboardingToken = JwtProvider.generateGoogleOnboardingToken(identity);
@@ -134,6 +140,7 @@ export class AuthController {
       }
 
       const coords = await GeocodingService.getCoordinates(neighborhood, city);
+      const downloadedAvatar = await AvatarStorageService.downloadGoogleAvatar(identity.picture);
       const user = await prisma.$transaction(async tx => {
         const userData: any = {
             email: identity.email,
@@ -189,9 +196,10 @@ export class AuthController {
       });
 
       const typedUser = user as any;
+      if (downloadedAvatar) typedUser.storedAvatar = await AuthController.saveAvatar(typedUser.id, downloadedAvatar);
       const token = JwtProvider.generateToken({ userId: typedUser.id, email: typedUser.email, role: typedUser.role });
       setTokenCookie(res, token);
-      return res.status(201).json({ token, user: AuthController.toAuthResponse(typedUser), requiresOnboarding: false });
+      return res.status(201).json({ token, user: AuthController.toAuthResponse(req, typedUser), requiresOnboarding: false });
     } catch (error: any) {
       if (error?.name === 'TokenExpiredError' || error?.name === 'JsonWebTokenError') {
         return res.status(401).json({ error: 'Sua sessão de cadastro expirou. Entre com o Google novamente.' });
@@ -361,7 +369,7 @@ export class AuthController {
 
       const user = await prisma.user.findUnique({
         where: { email },
-        include: { clientProfile: true, providerProfile: true },
+        include: { clientProfile: true, providerProfile: true, storedAvatar: { select: { updatedAt: true } } },
       });
 
       if (!user) {
@@ -390,6 +398,7 @@ export class AuthController {
           email: user.email,
           role: user.role,
           status: user.status,
+          avatarUrl: AvatarStorageService.publicUrl(req, user),
           profile: user.role === 'CLIENT' ? user.clientProfile : user.providerProfile,
         },
       });
@@ -411,6 +420,7 @@ export class AuthController {
               coverageAreas: true,
             },
           },
+          storedAvatar: { select: { updatedAt: true } },
         },
       });
 
@@ -418,8 +428,8 @@ export class AuthController {
         return res.status(404).json({ error: 'Usuário não encontrado.' });
       }
 
-      const { passwordHash, ...userWithoutPassword } = user;
-      return res.json(userWithoutPassword);
+      const { passwordHash, storedAvatar, ...userWithoutPassword } = user;
+      return res.json({ ...userWithoutPassword, avatarUrl: AvatarStorageService.publicUrl(req, user) });
     } catch (error: any) {
       return res.status(500).json({ error: 'Erro ao buscar usuário.', details: error.message });
     }
@@ -428,5 +438,14 @@ export class AuthController {
   public static async logout(_req: Request, res: Response) {
     clearTokenCookie(res);
     return res.json({ message: 'Logout realizado com sucesso.' });
+  }
+
+  private static saveAvatar(userId: string, avatar: DownloadedAvatar) {
+    return prisma.userAvatar.upsert({
+      where: { userId },
+      create: { userId, data: avatar.data, mimeType: avatar.mimeType },
+      update: { data: avatar.data, mimeType: avatar.mimeType },
+      select: { updatedAt: true },
+    });
   }
 }

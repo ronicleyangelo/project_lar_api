@@ -21,6 +21,7 @@ import { JwtProvider } from './infrastructure/security/jwt.provider';
 import { AccountDeletionWorker } from './modules/account/infrastructure/account-deletion.worker';
 import { securityHeaders, validateUuidParam } from './presentation/middlewares/request-security.middleware';
 import { PaymentController } from './presentation/controllers/payment.controller';
+import { AvatarController } from './presentation/controllers/avatar.controller';
 
 dotenv.config();
 
@@ -53,6 +54,7 @@ app.use('/api', apiRateLimiter);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', service: 'Projeto Lar API', timestamp: new Date().toISOString() });
 });
+app.get('/api/avatars/:userId', validateUuidParam('userId'), AvatarController.get);
 
 // Authentication Routes
 app.post('/api/auth/register-client', authenticationRateLimiter, AuthController.registerClient);

@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../../infrastructure/database/prisma.service';
+import { AvatarStorageService } from '../../infrastructure/media/avatar-storage.service';
 import { APPOINTMENT_STATUS, assertAppointmentTransition, REQUEST_STATUS } from '../../domain/service-lifecycle';
 
 const STATE_CHANGED = 'O estado deste agendamento mudou. Atualize a tela e tente novamente.';
@@ -131,7 +132,7 @@ export class AppointmentController {
         const appointments = await prisma.appointment.findMany({
           where: { providerId: provider.id },
           include: {
-            client: { include: { user: { select: { avatarUrl: true } } } },
+            client: { include: { user: { select: { id: true, avatarUrl: true, storedAvatar: { select: { updatedAt: true } } } } } },
             request: { include: { category: true } },
             quote: true,
             payment: true,
@@ -139,7 +140,17 @@ export class AppointmentController {
           },
           orderBy: { createdAt: 'desc' }
         });
-        return res.json(appointments);
+        return res.json(appointments.map(appointment => ({
+          ...appointment,
+          client: {
+            ...appointment.client,
+            user: {
+              ...appointment.client.user,
+              storedAvatar: undefined,
+              avatarUrl: AvatarStorageService.publicUrl(req, appointment.client.user),
+            },
+          },
+        })));
       }
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
