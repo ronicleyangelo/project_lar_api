@@ -8,7 +8,7 @@ import { SERVICE_CATEGORIES } from '../../domain/constants/service-categories';
 import { setTokenCookie, clearTokenCookie } from '../../shared/http/cookie.helper';
 import { EncryptionUtil } from '../../infrastructure/security/encryption.util';
 import { GeospatialFuzzingUtil } from '../../infrastructure/security/geospatial-fuzzing.util';
-import { AvatarStorageService, DownloadedAvatar } from '../../infrastructure/media/avatar-storage.service';
+import { AvatarStorageService } from '../../infrastructure/media/avatar-storage.service';
 
 const normalizePhone = (value: unknown): string => String(value ?? '').replace(/\D/g, '');
 const isValidMobilePhone = (value: string): boolean => /^[1-9]{2}9\d{8}$/.test(value);
@@ -70,7 +70,6 @@ export class AuthController {
           });
         }
 
-        const downloadedAvatar = await AvatarStorageService.downloadGoogleAvatar(identity.picture);
         user = await prisma.user.update({
           where: { id: user.id },
           data: {
@@ -80,10 +79,7 @@ export class AuthController {
           } as any,
           include: { clientProfile: true, providerProfile: true, storedAvatar: { select: { updatedAt: true } } },
         });
-        if (downloadedAvatar) {
-          const storedAvatar = await AuthController.saveAvatar(user.id, downloadedAvatar);
-          (user as any).storedAvatar = storedAvatar;
-        }
+        void AuthController.cacheGoogleAvatar(user.id, identity.picture);
 
         const token = JwtProvider.generateToken({ userId: user.id, email: user.email, role: user.role });
         setTokenCookie(res, token);
@@ -140,7 +136,6 @@ export class AuthController {
       }
 
       const coords = await GeocodingService.getCoordinates(neighborhood, city);
-      const downloadedAvatar = await AvatarStorageService.downloadGoogleAvatar(identity.picture);
       const user = await prisma.$transaction(async tx => {
         const userData: any = {
             email: identity.email,
@@ -196,7 +191,7 @@ export class AuthController {
       });
 
       const typedUser = user as any;
-      if (downloadedAvatar) typedUser.storedAvatar = await AuthController.saveAvatar(typedUser.id, downloadedAvatar);
+      void AuthController.cacheGoogleAvatar(typedUser.id, identity.picture);
       const token = JwtProvider.generateToken({ userId: typedUser.id, email: typedUser.email, role: typedUser.role });
       setTokenCookie(res, token);
       return res.status(201).json({ token, user: AuthController.toAuthResponse(req, typedUser), requiresOnboarding: false });
@@ -440,12 +435,17 @@ export class AuthController {
     return res.json({ message: 'Logout realizado com sucesso.' });
   }
 
-  private static saveAvatar(userId: string, avatar: DownloadedAvatar) {
-    return prisma.userAvatar.upsert({
-      where: { userId },
-      create: { userId, data: avatar.data, mimeType: avatar.mimeType },
-      update: { data: avatar.data, mimeType: avatar.mimeType },
-      select: { updatedAt: true },
-    });
+  private static async cacheGoogleAvatar(userId: string, source: string | undefined): Promise<void> {
+    try {
+      const avatar = await AvatarStorageService.downloadGoogleAvatar(source);
+      if (!avatar) return;
+      await prisma.userAvatar.upsert({
+        where: { userId },
+        create: { userId, data: avatar.data, mimeType: avatar.mimeType },
+        update: { data: avatar.data, mimeType: avatar.mimeType },
+      });
+    } catch (error) {
+      console.warn('[Avatar] Não foi possível armazenar a foto do Google.', error);
+    }
   }
 }
