@@ -33,4 +33,4 @@ COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
 COPY prisma ./prisma
 
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma db push && node dist/main.js"]
+CMD ["sh", "-c", "npx prisma db execute --file prisma/safe-coordinate-migration.sql --schema prisma/schema.prisma && npx prisma db push && node dist/main.js"]

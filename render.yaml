@@ -18,3 +18,23 @@ services:
         sync: false
       - key: FRONTEND_URL
         value: https://project-lar-web.vercel.app
+      - key: BACKEND_URL
+        value: https://project-lar-api.onrender.com
+      - key: ENCRYPTION_MASTER_KEY
+        sync: false
+      - key: MAPBOX_ACCESS_TOKEN
+        sync: false
+      - key: MERCADO_PAGO_CLIENT_ID
+        sync: false
+      - key: MERCADO_PAGO_CLIENT_SECRET
+        sync: false
+      - key: MERCADO_PAGO_REDIRECT_URI
+        value: https://project-lar-api.onrender.com/api/payments/mercado-pago/callback
+      - key: MERCADO_PAGO_WEBHOOK_SECRET
+        sync: false
+      - key: MERCADO_PAGO_TEST_MODE
+        value: "true"
+      - key: PLATFORM_FEE_PERCENT
+        value: "12"
+      - key: PAYMENTS_REQUIRED
+        value: "false"
