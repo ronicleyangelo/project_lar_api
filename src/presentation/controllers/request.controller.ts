@@ -236,8 +236,6 @@ export class RequestController {
       });
 
       const visibleRequests = requests.filter((requestItem) => {
-        const offeredActivityIds = new Set(provider.activities.map(item => item.activityId));
-        if (!requestItem.activities.every(item => offeredActivityIds.has(item.activityId))) return false;
         return providerCoversRequest(provider.serviceRadiusKm, provider.coverageAreas, requestItem);
       });
 
