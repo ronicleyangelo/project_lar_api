@@ -48,16 +48,26 @@ export class RequestController {
       if (Number.isNaN(parsedDate.getTime())) {
         return res.status(400).json({ error: 'Informe uma data válida para o serviço.' });
       }
-      if (parsedBudget !== null && (!Number.isFinite(parsedBudget) || parsedBudget < 0)) {
-        return res.status(400).json({ error: 'O orçamento deve ser um valor válido.' });
+      const todayInSaoPaulo = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date());
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(scheduledDate)) || String(scheduledDate) < todayInSaoPaulo) {
+        return res.status(400).json({ error: 'A data do serviço não pode estar no passado.' });
+      }
+      if (parsedBudget !== null && (!Number.isFinite(parsedBudget) || parsedBudget <= 0 || parsedBudget > 1_000_000)) {
+        return res.status(400).json({ error: 'O orçamento deve ser maior que zero e válido.' });
+      }
+      if (normalizedDescription.length < 10 || normalizedDescription.length > 1000) {
+        return res.status(400).json({ error: 'A descrição deve ter entre 10 e 1000 caracteres.' });
       }
       if (selectedActivityIds.length === 0) {
         return res.status(400).json({ error: 'Selecione ao menos uma atividade para o serviço.' });
       }
 
-      const [clientProfile, category] = await Promise.all([
+      const [clientProfile, category, validActivityCount] = await Promise.all([
         prisma.clientProfile.findUnique({ where: { userId } }),
         prisma.category.findUnique({ where: { id: categoryId } }),
+        prisma.serviceActivity.count({ where: { id: { in: selectedActivityIds }, active: true } }),
       ]);
 
       if (!clientProfile) {
@@ -65,6 +75,9 @@ export class RequestController {
       }
       if (!category) {
         return res.status(400).json({ error: 'Categoria de serviço não encontrada.' });
+      }
+      if (validActivityCount !== selectedActivityIds.length) {
+        return res.status(400).json({ error: 'Uma ou mais atividades selecionadas são inválidas.' });
       }
 
       deduplicationKey = buildDeduplicationKey(clientProfile.id, {
